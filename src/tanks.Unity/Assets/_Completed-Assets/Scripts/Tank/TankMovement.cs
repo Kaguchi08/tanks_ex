@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using Complete.Interfaces;
-using Complete.Input;
 using UniRx;
+using System;
 
 namespace Complete
 {
@@ -24,22 +24,24 @@ namespace Complete
         public AudioClip m_EngineDriving;
         public float m_PitchRange = 0.2f;
 
-        private IInputHandler _inputHandler;
+        private IInputProvider _inputProvider;
         private Rigidbody m_Rigidbody;
         private float m_OriginalPitch;
         private ParticleSystem[] m_particleSystems;
         private CompositeDisposable _disposables;
 
+        private float _movementInputValue;
+        private float _turnInputValue;
+
+        public void Setup(IInputProvider inputProvider)
+        {
+            _inputProvider = inputProvider;
+        }
+
         private void Awake()
         {
             m_Rigidbody = GetComponent<Rigidbody>();
             m_OriginalPitch = m_MovementAudio.pitch;
-        }
-
-        private void Start()
-        {
-            // 入力ハンドラーを設定
-            _inputHandler = new PlayerInputHandler(m_PlayerNumber);
         }
 
         private void OnEnable()
@@ -52,27 +54,36 @@ namespace Complete
                 ps.Play();
             }
 
-            // UniRx購読セットアップ
             _disposables = new CompositeDisposable();
 
-            // 毎フレーム入力更新 & エンジン音
-            Observable.EveryUpdate()
-                .Subscribe(_ =>
-                {
-                    _inputHandler?.UpdateInput();
-                    UpdateEngineAudio();
-                })
-                .AddTo(_disposables);
+            if (_inputProvider != null)
+            {
+                _inputProvider.MovementInput
+                    .Subscribe(value => _movementInputValue = value)
+                    .AddTo(_disposables);
 
+                _inputProvider.TurnInput
+                    .Subscribe(value => _turnInputValue = value)
+                    .AddTo(_disposables);
+                
+                // エンジン音の更新
+                _inputProvider.MovementInput.Merge(_inputProvider.TurnInput.Select(x => Mathf.Abs(x)))
+                    .Select(v => Mathf.Abs(v) > 0.1f)
+                    .DistinctUntilChanged()
+                    .Subscribe(isMoving =>
+                    {
+                        var clip = isMoving ? m_EngineDriving : m_EngineIdling;
+                        PlayEngineClip(clip);
+                    })
+                    .AddTo(_disposables);
+            }
+            
             // FixedUpdate相当で移動・回転処理
             Observable.EveryFixedUpdate()
                 .Subscribe(_ =>
                 {
-                    if (_inputHandler != null)
-                    {
-                        Move(_inputHandler.MovementInput);
-                        Turn(_inputHandler.TurnInput);
-                    }
+                    Move(_movementInputValue);
+                    Turn(_turnInputValue);
                 })
                 .AddTo(_disposables);
         }
@@ -87,11 +98,23 @@ namespace Complete
             }
 
             _disposables?.Dispose();
+
+            // InputProviderのライフサイクルはGameManagerが管理するため、ここでは破棄しない
+            // if (_inputProvider is IDisposable disposable)
+            // {
+            //     disposable.Dispose();
+            // }
+            // _inputProvider = null;
+        }
+
+        private void Start()
+        {
+            // GameManagerがSetupを呼び出すので、ここでは何もしない
         }
 
         private void Update()
         {
-            // Update/FixedUpdate は UniRx に置き換え済み
+            // Update は UniRx に置き換え済み
         }
 
         private void Move(float movementInput)
@@ -109,25 +132,13 @@ namespace Complete
 
         private void UpdateEngineAudio()
         {
-            if (_inputHandler == null) return;
-
-            bool isMoving = Mathf.Abs(_inputHandler.MovementInput) > 0.1f || 
-                           Mathf.Abs(_inputHandler.TurnInput) > 0.1f;
-
-            if (!isMoving && m_MovementAudio.clip == m_EngineDriving)
-            {
-                PlayEngineClip(m_EngineIdling);
-            }
-            else if (isMoving && m_MovementAudio.clip == m_EngineIdling)
-            {
-                PlayEngineClip(m_EngineDriving);
-            }
+            // UniRxのストリーム処理に置き換え
         }
 
         private void PlayEngineClip(AudioClip clip)
         {
             m_MovementAudio.clip = clip;
-            m_MovementAudio.pitch = Random.Range(m_OriginalPitch - m_PitchRange, m_OriginalPitch + m_PitchRange);
+            m_MovementAudio.pitch = UnityEngine.Random.Range(m_OriginalPitch - m_PitchRange, m_OriginalPitch + m_PitchRange);
             m_MovementAudio.Play();
         }
     }

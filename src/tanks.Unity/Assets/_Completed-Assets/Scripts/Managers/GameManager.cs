@@ -4,8 +4,10 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Complete.Interfaces;
 using Complete.GameStates;
+using Complete.Input;
 using Cysharp.Threading.Tasks;
 using System.Threading;
+using System;
 
 namespace Complete
 {
@@ -55,11 +57,24 @@ namespace Complete
                 // タンクのインスタンスを作成
                 GameObject tankInstance = Instantiate(m_TankPrefab, m_Tanks[i].m_SpawnPoint.position, m_Tanks[i].m_SpawnPoint.rotation);
                 
-                // プレイヤー番号を設定
-                m_Tanks[i].PlayerNumber = i + 1;
-                
+                // タンクの種類に応じたInputProviderと名前を設定
+                IInputProvider inputProvider;
+                string playerName;
+                int playerNumber = i + 1;
+
+                if (m_Tanks[i].m_TankType == TankType.AI)
+                {
+                    inputProvider = new AIInputProvider();
+                    playerName = "AI " + playerNumber;
+                }
+                else
+                {
+                    inputProvider = new LocalInputProvider(playerNumber);
+                    playerName = "PLAYER " + playerNumber;
+                }
+
                 // タンクをセットアップ
-                m_Tanks[i].Setup(tankInstance);
+                m_Tanks[i].Setup(tankInstance, inputProvider, playerNumber, playerName);
             }
         }
 
@@ -116,6 +131,18 @@ namespace Complete
         {
             await state.EnterAsync(token);
             state.Exit();
+        }
+
+        private void OnDestroy()
+        {
+            // InputProviderをクリーンアップ
+            foreach (var tank in m_Tanks)
+            {
+                if (tank.InputProvider is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
         }
     }
 }

@@ -1,8 +1,8 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
 using Complete.Interfaces;
-using Complete.Input;
 using UniRx;
+using System;
 
 namespace Complete
 {
@@ -30,18 +30,19 @@ namespace Complete
         public AudioClip m_ChargingClip;
         public AudioClip m_FireClip;
 
-        private IInputHandler _inputHandler;
+        private IInputProvider _inputProvider;
         private float m_CurrentLaunchForce;
         private float m_ChargeSpeed;
         private bool m_Fired;
         private CompositeDisposable _disposables;
 
-
-        private void Start()
+        public void Setup(IInputProvider inputProvider)
         {
-            // 入力ハンドラーを設定
-            _inputHandler = new PlayerInputHandler(m_PlayerNumber);
-            
+            _inputProvider = inputProvider;
+        }
+
+        private void Awake()
+        {
             // チャージスピードを計算
             m_ChargeSpeed = (m_MaxLaunchForce - m_MinLaunchForce) / m_MaxChargeTime;
         }
@@ -51,48 +52,65 @@ namespace Complete
             m_CurrentLaunchForce = m_MinLaunchForce;
             m_AimSlider.value = m_MinLaunchForce;
 
-            // UniRx購読セットアップ
             _disposables = new CompositeDisposable();
 
-            // 毎フレーム入力および射撃処理
-            Observable.EveryUpdate()
-                   .Subscribe(_ =>
-                   {
-                       if (_inputHandler == null) return;
-                       _inputHandler.UpdateInput();
-                       HandleShootingInput();
-                   })
-                   .AddTo(_disposables);
+            if (_inputProvider != null)
+            {
+                // ボタンの入力状態が変化した時だけ発火するストリームを作成
+                // Skip(1)で最初の不要な通知を無視する
+                _inputProvider.FireButton
+                    .Skip(1)
+                    .DistinctUntilChanged()
+                    .Subscribe(isPressed =>
+                    {
+                        if (isPressed)
+                        {
+                            // ボタンが押された瞬間の処理 (チャージ開始)
+                            StartCharging();
+                        }
+                        else
+                        {
+                            // ボタンが離された瞬間の処理 (発射)
+                            // m_Firedフラグをチェックし、最大チャージで発射済みでなければ発射
+                            if (!m_Fired)
+                            {
+                                Fire();
+                            }
+                        }
+                    })
+                    .AddTo(_disposables);
+
+                // ボタンが押されている間、継続的にチャージする
+                Observable.EveryUpdate()
+                    .Where(_ => _inputProvider.FireButton.Value && !m_Fired)
+                    .Subscribe(_ => ContinueCharging())
+                    .AddTo(_disposables);
+            }
         }
 
         private void OnDisable()
         {
             _disposables?.Dispose();
+            // InputProviderのライフサイクルはGameManagerが管理するため、ここでは破棄しない
+            // if (_inputProvider is IDisposable disposable)
+            // {
+            //     disposable.Dispose();
+            // }
+            // _inputProvider = null;
         }
-
-        private void HandleShootingInput()
+        
+        private void Start()
         {
-            // スライダーのデフォルト値を設定
-            m_AimSlider.value = m_MinLaunchForce;
+            // GameManagerがSetupを呼び出すので、ここでは何もしない
+        }
+        
+        private void Update()
+        {
+            // スライダーの値を更新
+            m_AimSlider.value = m_CurrentLaunchForce;
 
-            // 最大力に達しており、まだ発射していない場合
+            // チャージが最大に達し、まだ発射していない場合は自動で発射
             if (m_CurrentLaunchForce >= m_MaxLaunchForce && !m_Fired)
-            {
-                m_CurrentLaunchForce = m_MaxLaunchForce;
-                Fire();
-            }
-            // 射撃ボタンが押された瞬間
-            else if (_inputHandler.FireButtonDown)
-            {
-                StartCharging();
-            }
-            // 射撃ボタンが押されている間（まだ発射していない）
-            else if (_inputHandler.FireButtonHeld && !m_Fired)
-            {
-                ContinueCharging();
-            }
-            // 射撃ボタンが離された瞬間（まだ発射していない）
-            else if (_inputHandler.FireButtonUp && !m_Fired)
             {
                 Fire();
             }
@@ -110,11 +128,9 @@ namespace Complete
 
         private void ContinueCharging()
         {
-            // 発射力を増加
+            // 発射力を増加させる
             m_CurrentLaunchForce += m_ChargeSpeed * Time.deltaTime;
-            m_AimSlider.value = m_CurrentLaunchForce;
         }
-
 
         private void Fire()
         {
