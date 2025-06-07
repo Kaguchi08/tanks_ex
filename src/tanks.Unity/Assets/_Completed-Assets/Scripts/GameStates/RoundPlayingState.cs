@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using Complete.Interfaces;
+using Cysharp.Threading.Tasks;
 
 namespace Complete.GameStates
 {
@@ -22,7 +23,7 @@ namespace Complete.GameStates
             _tankControllers = tankControllers;
         }
 
-        public IEnumerator Enter()
+        public async UniTask EnterAsync()
         {
             // プレイヤーがタンクを制御できるようにする
             EnableTankControl();
@@ -30,11 +31,8 @@ namespace Complete.GameStates
             // 画面からテキストを消去
             _messageText.text = string.Empty;
 
-            // 1台のタンクが残るまでループ
-            while (!OneTankLeft())
-            {
-                yield return null;
-            }
+            // 1台のタンクが残るまで待機
+            await UniTask.WaitUntil(OneTankLeft);
         }
 
         public void Exit()

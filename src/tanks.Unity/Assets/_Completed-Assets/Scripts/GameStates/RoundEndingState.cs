@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using Complete.Interfaces;
+using Cysharp.Threading.Tasks;
 namespace Complete.GameStates
 {
     /// <summary>
@@ -28,7 +29,7 @@ namespace Complete.GameStates
             _numRoundsToWin = numRoundsToWin;
         }
 
-        public IEnumerator Enter()
+        public async UniTask EnterAsync()
         {
             // タンクの制御を停止
             DisableTankControl();
@@ -51,7 +52,7 @@ namespace Complete.GameStates
             _messageText.text = message;
 
             // 指定時間待機
-            yield return new WaitForSeconds(_endDelay);
+            await UniTask.Delay(System.TimeSpan.FromSeconds(_endDelay));
         }
 
         public void Exit()

@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using Complete.Interfaces;
+using Cysharp.Threading.Tasks;
 
 namespace Complete.GameStates
 {
@@ -28,7 +29,7 @@ namespace Complete.GameStates
             _roundNumber = roundNumber;
         }
 
-        public IEnumerator Enter()
+        public async UniTask EnterAsync()
         {
             // タンクをリセットし、制御を無効にする
             ResetAllTanks();
@@ -41,7 +42,7 @@ namespace Complete.GameStates
             _messageText.text = "ROUND " + _roundNumber;
 
             // 指定時間待機
-            yield return new WaitForSeconds(_startDelay);
+            await UniTask.Delay(System.TimeSpan.FromSeconds(_startDelay));
         }
 
         public void Exit()

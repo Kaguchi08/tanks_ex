@@ -1,4 +1,5 @@
 using System.Collections;
+using Cysharp.Threading.Tasks;
 
 namespace Complete.Interfaces
 {
@@ -12,7 +13,7 @@ namespace Complete.Interfaces
         /// 状態に入る時の処理
         /// </summary>
         /// <returns>状態の実行コルーチン</returns>
-        IEnumerator Enter();
+        Cysharp.Threading.Tasks.UniTask EnterAsync();
         
         /// <summary>
         /// 状態から出る時の処理

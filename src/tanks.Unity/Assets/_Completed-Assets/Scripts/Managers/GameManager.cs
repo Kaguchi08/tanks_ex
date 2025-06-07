@@ -4,7 +4,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Complete.Interfaces;
 using Complete.GameStates;
-using Complete.Tank.Refactored;
+using Cysharp.Threading.Tasks;
 
 namespace Complete
 {
@@ -26,15 +26,11 @@ namespace Complete
         public TankManager[] m_Tanks;     // 既存のTankManagerを使用（ITankControllerインターフェース対応済み）
 
         
-        private GameStateManager _gameStateManager;
         private ITankController[] _tankControllers;
         private int _roundNumber;
 
         private void Start()
         {
-            // ゲーム状態マネージャーを初期化
-            _gameStateManager = gameObject.AddComponent<GameStateManager>();
-            
             // タンクを生成してセットアップ
             SpawnAllTanks();
             SetCameraTargets();
@@ -46,8 +42,8 @@ namespace Complete
                 _tankControllers[i] = m_Tanks[i];
             }
 
-            // ゲームループを開始
-            StartCoroutine(GameLoop());
+            // ゲームループを非同期で開始
+            _ = GameLoopAsync(); // fire and forget
         }
 
 
@@ -83,7 +79,7 @@ namespace Complete
         /// <summary>
         /// ゲームループ - 状態管理システムを使用
         /// </summary>
-        private IEnumerator GameLoop()
+        private async UniTask GameLoopAsync()
         {
             while (true)
             {
@@ -91,21 +87,21 @@ namespace Complete
 
                 // ラウンド開始状態
                 var roundStartingState = new RoundStartingState(m_StartDelay, m_MessageText, m_CameraControl, _tankControllers, _roundNumber);
-                yield return StartCoroutine(ExecuteState(roundStartingState));
+                await ExecuteStateAsync(roundStartingState);
 
                 // ラウンドプレイ状態
                 var roundPlayingState = new RoundPlayingState(m_MessageText, _tankControllers);
-                yield return StartCoroutine(ExecuteState(roundPlayingState));
+                await ExecuteStateAsync(roundPlayingState);
 
                 // ラウンド終了状態
                 var roundEndingState = new RoundEndingState(m_EndDelay, m_MessageText, _tankControllers, m_NumRoundsToWin);
-                yield return StartCoroutine(ExecuteState(roundEndingState));
+                await ExecuteStateAsync(roundEndingState);
 
                 // ゲーム勝者がいる場合、シーンを再読み込み
                 if (roundEndingState.GameWinner != null)
                 {
                     SceneManager.LoadScene(0);
-                    yield break;
+                    return;
                 }
             }
         }
@@ -113,9 +109,9 @@ namespace Complete
         /// <summary>
         /// 状態を実行する
         /// </summary>
-        private IEnumerator ExecuteState(IGameState state)
+        private async UniTask ExecuteStateAsync(IGameState state)
         {
-            yield return StartCoroutine(state.Enter());
+            await state.EnterAsync();
             state.Exit();
         }
     }
