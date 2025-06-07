@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using Complete.Interfaces;
 using Complete.Input;
+using UniRx;
 
 namespace Complete
 {
@@ -27,6 +28,7 @@ namespace Complete
         private Rigidbody m_Rigidbody;
         private float m_OriginalPitch;
         private ParticleSystem[] m_particleSystems;
+        private CompositeDisposable _disposables;
 
         private void Awake()
         {
@@ -49,6 +51,30 @@ namespace Complete
             {
                 ps.Play();
             }
+
+            // UniRx購読セットアップ
+            _disposables = new CompositeDisposable();
+
+            // 毎フレーム入力更新 & エンジン音
+            Observable.EveryUpdate()
+                .Subscribe(_ =>
+                {
+                    _inputHandler?.UpdateInput();
+                    UpdateEngineAudio();
+                })
+                .AddTo(_disposables);
+
+            // FixedUpdate相当で移動・回転処理
+            Observable.EveryFixedUpdate()
+                .Subscribe(_ =>
+                {
+                    if (_inputHandler != null)
+                    {
+                        Move(_inputHandler.MovementInput);
+                        Turn(_inputHandler.TurnInput);
+                    }
+                })
+                .AddTo(_disposables);
         }
 
         private void OnDisable()
@@ -59,22 +85,13 @@ namespace Complete
             {
                 ps.Stop();
             }
-        }
 
+            _disposables?.Dispose();
+        }
 
         private void Update()
         {
-            _inputHandler?.UpdateInput();
-            UpdateEngineAudio();
-        }
-
-        private void FixedUpdate()
-        {
-            if (_inputHandler != null)
-            {
-                Move(_inputHandler.MovementInput);
-                Turn(_inputHandler.TurnInput);
-            }
+            // Update/FixedUpdate は UniRx に置き換え済み
         }
 
         private void Move(float movementInput)

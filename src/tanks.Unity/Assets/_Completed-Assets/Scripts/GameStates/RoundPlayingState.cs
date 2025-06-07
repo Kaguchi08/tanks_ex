@@ -23,7 +23,7 @@ namespace Complete.GameStates
             _tankControllers = tankControllers;
         }
 
-        public async UniTask EnterAsync()
+        public async UniTask EnterAsync(System.Threading.CancellationToken token)
         {
             // プレイヤーがタンクを制御できるようにする
             EnableTankControl();
@@ -32,7 +32,7 @@ namespace Complete.GameStates
             _messageText.text = string.Empty;
 
             // 1台のタンクが残るまで待機
-            await UniTask.WaitUntil(OneTankLeft);
+            await UniTask.WaitUntil(OneTankLeft, cancellationToken: token);
         }
 
         public void Exit()

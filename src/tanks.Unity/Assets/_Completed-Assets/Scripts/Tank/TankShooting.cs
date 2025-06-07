@@ -2,6 +2,7 @@
 using UnityEngine.UI;
 using Complete.Interfaces;
 using Complete.Input;
+using UniRx;
 
 namespace Complete
 {
@@ -33,6 +34,7 @@ namespace Complete
         private float m_CurrentLaunchForce;
         private float m_ChargeSpeed;
         private bool m_Fired;
+        private CompositeDisposable _disposables;
 
 
         private void Start()
@@ -48,15 +50,24 @@ namespace Complete
         {
             m_CurrentLaunchForce = m_MinLaunchForce;
             m_AimSlider.value = m_MinLaunchForce;
+
+            // UniRx購読セットアップ
+            _disposables = new CompositeDisposable();
+
+            // 毎フレーム入力および射撃処理
+            Observable.EveryUpdate()
+                   .Subscribe(_ =>
+                   {
+                       if (_inputHandler == null) return;
+                       _inputHandler.UpdateInput();
+                       HandleShootingInput();
+                   })
+                   .AddTo(_disposables);
         }
 
-
-        private void Update()
+        private void OnDisable()
         {
-            if (_inputHandler == null) return;
-
-            _inputHandler.UpdateInput();
-            HandleShootingInput();
+            _disposables?.Dispose();
         }
 
         private void HandleShootingInput()

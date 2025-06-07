@@ -29,7 +29,7 @@ namespace Complete.GameStates
             _roundNumber = roundNumber;
         }
 
-        public async UniTask EnterAsync()
+        public async UniTask EnterAsync(System.Threading.CancellationToken token)
         {
             // タンクをリセットし、制御を無効にする
             ResetAllTanks();
@@ -42,7 +42,7 @@ namespace Complete.GameStates
             _messageText.text = "ROUND " + _roundNumber;
 
             // 指定時間待機
-            await UniTask.Delay(System.TimeSpan.FromSeconds(_startDelay));
+            await UniTask.Delay(System.TimeSpan.FromSeconds(_startDelay), cancellationToken: token);
         }
 
         public void Exit()

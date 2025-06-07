@@ -29,7 +29,7 @@ namespace Complete.GameStates
             _numRoundsToWin = numRoundsToWin;
         }
 
-        public async UniTask EnterAsync()
+        public async UniTask EnterAsync(System.Threading.CancellationToken token)
         {
             // タンクの制御を停止
             DisableTankControl();
@@ -52,7 +52,7 @@ namespace Complete.GameStates
             _messageText.text = message;
 
             // 指定時間待機
-            await UniTask.Delay(System.TimeSpan.FromSeconds(_endDelay));
+            await UniTask.Delay(System.TimeSpan.FromSeconds(_endDelay), cancellationToken: token);
         }
 
         public void Exit()

@@ -1,5 +1,6 @@
 using System.Collections;
 using Cysharp.Threading.Tasks;
+using System.Threading;
 
 namespace Complete.Interfaces
 {
@@ -13,7 +14,7 @@ namespace Complete.Interfaces
         /// 状態に入る時の処理
         /// </summary>
         /// <returns>状態の実行コルーチン</returns>
-        Cysharp.Threading.Tasks.UniTask EnterAsync();
+        Cysharp.Threading.Tasks.UniTask EnterAsync(CancellationToken token);
         
         /// <summary>
         /// 状態から出る時の処理

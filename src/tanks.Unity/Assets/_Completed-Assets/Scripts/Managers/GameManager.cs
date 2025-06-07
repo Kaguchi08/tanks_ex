@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using Complete.Interfaces;
 using Complete.GameStates;
 using Cysharp.Threading.Tasks;
+using System.Threading;
 
 namespace Complete
 {
@@ -81,21 +82,23 @@ namespace Complete
         /// </summary>
         private async UniTask GameLoopAsync()
         {
-            while (true)
+            CancellationToken token = this.GetCancellationTokenOnDestroy();
+
+            while (!token.IsCancellationRequested)
             {
                 _roundNumber++;
 
                 // ラウンド開始状態
                 var roundStartingState = new RoundStartingState(m_StartDelay, m_MessageText, m_CameraControl, _tankControllers, _roundNumber);
-                await ExecuteStateAsync(roundStartingState);
+                await ExecuteStateAsync(roundStartingState, token);
 
                 // ラウンドプレイ状態
                 var roundPlayingState = new RoundPlayingState(m_MessageText, _tankControllers);
-                await ExecuteStateAsync(roundPlayingState);
+                await ExecuteStateAsync(roundPlayingState, token);
 
                 // ラウンド終了状態
                 var roundEndingState = new RoundEndingState(m_EndDelay, m_MessageText, _tankControllers, m_NumRoundsToWin);
-                await ExecuteStateAsync(roundEndingState);
+                await ExecuteStateAsync(roundEndingState, token);
 
                 // ゲーム勝者がいる場合、シーンを再読み込み
                 if (roundEndingState.GameWinner != null)
@@ -109,9 +112,9 @@ namespace Complete
         /// <summary>
         /// 状態を実行する
         /// </summary>
-        private async UniTask ExecuteStateAsync(IGameState state)
+        private async UniTask ExecuteStateAsync(IGameState state, CancellationToken token)
         {
-            await state.EnterAsync();
+            await state.EnterAsync(token);
             state.Exit();
         }
     }
