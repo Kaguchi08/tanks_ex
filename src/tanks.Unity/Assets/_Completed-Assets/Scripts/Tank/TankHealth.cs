@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using UniRx;
 
 namespace Complete
 {
@@ -15,7 +16,7 @@ namespace Complete
         
         private AudioSource m_ExplosionAudio;               // The audio source to play when the tank explodes.
         private ParticleSystem m_ExplosionParticles;        // The particle system the will play when the tank is destroyed.
-        private float m_CurrentHealth;                      // How much health the tank currently has.
+        private UniRx.ReactiveProperty<float> _currentHealth; // リアクティブなヘルス値
         private bool m_Dead;                                // Has the tank been reduced beyond zero health yet?
 
 
@@ -29,43 +30,42 @@ namespace Complete
 
             // Disable the prefab so it can be activated when it's required.
             m_ExplosionParticles.gameObject.SetActive (false);
+
+            // ReactiveProperty 初期化と購読設定
+            _currentHealth = new UniRx.ReactiveProperty<float>(m_StartingHealth);
+
+            // UI スライダー更新
+            _currentHealth
+                .Subscribe(value =>
+                {
+                    m_Slider.value = value;
+                    m_FillImage.color = Color.Lerp (m_ZeroHealthColor, m_FullHealthColor, value / m_StartingHealth);
+                })
+                .AddTo(this);
+
+            // 死亡判定
+            _currentHealth
+                .Where(value => value <= 0f)
+                .First()
+                .Subscribe(_ => OnDeath())
+                .AddTo(this);
         }
 
 
         private void OnEnable()
         {
             // When the tank is enabled, reset the tank's health and whether or not it's dead.
-            m_CurrentHealth = m_StartingHealth;
+            _currentHealth.Value = m_StartingHealth;
             m_Dead = false;
 
-            // Update the health slider's value and color.
-            SetHealthUI();
+            // ReactivePropertyによってスライダーは自動更新
         }
 
 
         public void TakeDamage (float amount)
         {
             // Reduce current health by the amount of damage done.
-            m_CurrentHealth -= amount;
-
-            // Change the UI elements appropriately.
-            SetHealthUI ();
-
-            // If the current health is at or below zero and it has not yet been registered, call OnDeath.
-            if (m_CurrentHealth <= 0f && !m_Dead)
-            {
-                OnDeath ();
-            }
-        }
-
-
-        private void SetHealthUI ()
-        {
-            // Set the slider's value appropriately.
-            m_Slider.value = m_CurrentHealth;
-
-            // Interpolate the color of the bar between the choosen colours based on the current percentage of the starting health.
-            m_FillImage.color = Color.Lerp (m_ZeroHealthColor, m_FullHealthColor, m_CurrentHealth / m_StartingHealth);
+            _currentHealth.Value -= amount;
         }
 
 

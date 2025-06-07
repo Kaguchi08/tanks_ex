@@ -1,103 +1,136 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using Complete.Interfaces;
+using Complete.Input;
+using UniRx;
 
 namespace Complete
 {
+    /// <summary>
+    /// TankShooting - リファクタリング版に移行
+    /// 新しいSOLID原則に基づいた設計を使用
+    /// </summary>
     public class TankShooting : MonoBehaviour
     {
-        public int m_PlayerNumber = 1;              // Used to identify the different players.
-        public Rigidbody m_Shell;                   // Prefab of the shell.
-        public Transform m_FireTransform;           // A child of the tank where the shells are spawned.
-        public Slider m_AimSlider;                  // A child of the tank that displays the current launch force.
-        public AudioSource m_ShootingAudio;         // Reference to the audio source used to play the shooting audio. NB: different to the movement audio source.
-        public AudioClip m_ChargingClip;            // Audio that plays when each shot is charging up.
-        public AudioClip m_FireClip;                // Audio that plays when each shot is fired.
-        public float m_MinLaunchForce = 15f;        // The force given to the shell if the fire button is not held.
-        public float m_MaxLaunchForce = 30f;        // The force given to the shell if the fire button is held for the max charge time.
-        public float m_MaxChargeTime = 0.75f;       // How long the shell can charge for before it is fired at max force.
+        [Header("Player Settings")]
+        public int m_PlayerNumber = 1;
+
+        [Header("Shooting Settings")]
+        public Rigidbody m_Shell;
+        public Transform m_FireTransform;
+        public float m_MinLaunchForce = 15f;
+        public float m_MaxLaunchForce = 30f;
+        public float m_MaxChargeTime = 0.75f;
+
+        [Header("UI")]
+        public Slider m_AimSlider;
+
+        [Header("Audio")]
+        public AudioSource m_ShootingAudio;
+        public AudioClip m_ChargingClip;
+        public AudioClip m_FireClip;
+
+        private IInputHandler _inputHandler;
+        private float m_CurrentLaunchForce;
+        private float m_ChargeSpeed;
+        private bool m_Fired;
+        private CompositeDisposable _disposables;
 
 
-        private string m_FireButton;                // The input axis that is used for launching shells.
-        private float m_CurrentLaunchForce;         // The force that will be given to the shell when the fire button is released.
-        private float m_ChargeSpeed;                // How fast the launch force increases, based on the max charge time.
-        private bool m_Fired;                       // Whether or not the shell has been launched with this button press.
-
-
-        private void OnEnable()
+        private void Start()
         {
-            // When the tank is turned on, reset the launch force and the UI
-            m_CurrentLaunchForce = m_MinLaunchForce;
-            m_AimSlider.value = m_MinLaunchForce;
-        }
-
-
-        private void Start ()
-        {
-            // The fire axis is based on the player number.
-            m_FireButton = "Fire" + m_PlayerNumber;
-
-            // The rate that the launch force charges up is the range of possible forces by the max charge time.
+            // 入力ハンドラーを設定
+            _inputHandler = new PlayerInputHandler(m_PlayerNumber);
+            
+            // チャージスピードを計算
             m_ChargeSpeed = (m_MaxLaunchForce - m_MinLaunchForce) / m_MaxChargeTime;
         }
 
-
-        private void Update ()
+        private void OnEnable()
         {
-            // The slider should have a default value of the minimum launch force.
+            m_CurrentLaunchForce = m_MinLaunchForce;
             m_AimSlider.value = m_MinLaunchForce;
 
-            // If the max force has been exceeded and the shell hasn't yet been launched...
+            // UniRx購読セットアップ
+            _disposables = new CompositeDisposable();
+
+            // 毎フレーム入力および射撃処理
+            Observable.EveryUpdate()
+                   .Subscribe(_ =>
+                   {
+                       if (_inputHandler == null) return;
+                       _inputHandler.UpdateInput();
+                       HandleShootingInput();
+                   })
+                   .AddTo(_disposables);
+        }
+
+        private void OnDisable()
+        {
+            _disposables?.Dispose();
+        }
+
+        private void HandleShootingInput()
+        {
+            // スライダーのデフォルト値を設定
+            m_AimSlider.value = m_MinLaunchForce;
+
+            // 最大力に達しており、まだ発射していない場合
             if (m_CurrentLaunchForce >= m_MaxLaunchForce && !m_Fired)
             {
-                // ... use the max force and launch the shell.
                 m_CurrentLaunchForce = m_MaxLaunchForce;
-                Fire ();
+                Fire();
             }
-            // Otherwise, if the fire button has just started being pressed...
-            else if (Input.GetButtonDown (m_FireButton))
+            // 射撃ボタンが押された瞬間
+            else if (_inputHandler.FireButtonDown)
             {
-                // ... reset the fired flag and reset the launch force.
-                m_Fired = false;
-                m_CurrentLaunchForce = m_MinLaunchForce;
-
-                // Change the clip to the charging clip and start it playing.
-                m_ShootingAudio.clip = m_ChargingClip;
-                m_ShootingAudio.Play ();
+                StartCharging();
             }
-            // Otherwise, if the fire button is being held and the shell hasn't been launched yet...
-            else if (Input.GetButton (m_FireButton) && !m_Fired)
+            // 射撃ボタンが押されている間（まだ発射していない）
+            else if (_inputHandler.FireButtonHeld && !m_Fired)
             {
-                // Increment the launch force and update the slider.
-                m_CurrentLaunchForce += m_ChargeSpeed * Time.deltaTime;
-
-                m_AimSlider.value = m_CurrentLaunchForce;
+                ContinueCharging();
             }
-            // Otherwise, if the fire button is released and the shell hasn't been launched yet...
-            else if (Input.GetButtonUp (m_FireButton) && !m_Fired)
+            // 射撃ボタンが離された瞬間（まだ発射していない）
+            else if (_inputHandler.FireButtonUp && !m_Fired)
             {
-                // ... launch the shell.
-                Fire ();
+                Fire();
             }
         }
 
-
-        private void Fire ()
+        private void StartCharging()
         {
-            // Set the fired flag so only Fire is only called once.
+            m_Fired = false;
+            m_CurrentLaunchForce = m_MinLaunchForce;
+
+            // チャージ音を再生
+            m_ShootingAudio.clip = m_ChargingClip;
+            m_ShootingAudio.Play();
+        }
+
+        private void ContinueCharging()
+        {
+            // 発射力を増加
+            m_CurrentLaunchForce += m_ChargeSpeed * Time.deltaTime;
+            m_AimSlider.value = m_CurrentLaunchForce;
+        }
+
+
+        private void Fire()
+        {
             m_Fired = true;
 
-            // Create an instance of the shell and store a reference to it's rigidbody.
-            Rigidbody shellInstance =
-                Instantiate (m_Shell, m_FireTransform.position, m_FireTransform.rotation) as Rigidbody;
+            // シェルのインスタンスを作成
+            Rigidbody shellInstance = Instantiate(m_Shell, m_FireTransform.position, m_FireTransform.rotation) as Rigidbody;
 
-            // Set the shell's velocity to the launch force in the fire position's forward direction.
-            shellInstance.velocity = m_CurrentLaunchForce * m_FireTransform.forward; 
+            // シェルに速度を設定
+            shellInstance.velocity = m_CurrentLaunchForce * m_FireTransform.forward;
 
-            // Change the clip to the firing clip and play it.
+            // 発射音を再生
             m_ShootingAudio.clip = m_FireClip;
-            m_ShootingAudio.Play ();
+            m_ShootingAudio.Play();
 
-            // Reset the launch force.  This is a precaution in case of missing button events.
+            // 発射力をリセット
             m_CurrentLaunchForce = m_MinLaunchForce;
         }
     }
