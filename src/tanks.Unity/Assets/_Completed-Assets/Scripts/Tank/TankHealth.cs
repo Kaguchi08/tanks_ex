@@ -45,8 +45,7 @@ namespace Complete
 
             // 死亡判定
             _currentHealth
-                .Where(value => value <= 0f)
-                .First()
+                .Where(value => value <= 0f && !m_Dead)
                 .Subscribe(_ => OnDeath())
                 .AddTo(this);
         }
