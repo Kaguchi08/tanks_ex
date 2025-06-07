@@ -20,10 +20,5 @@ namespace Complete.Interfaces
         /// タンクをリセットする
         /// </summary>
         void Reset();
-        
-        /// <summary>
-        /// プレイヤー番号
-        /// </summary>
-        int PlayerNumber { get; set; }
     }
 } 

@@ -1,6 +1,7 @@
 ﻿using System;
 using UnityEngine;
 using Complete.Interfaces;
+using Complete.Input;
 
 namespace Complete
 {
@@ -8,18 +9,26 @@ namespace Complete
     /// TankManager - 既存の互換性を保持しつつ、新しい設計に対応
     /// ITankControllerインターフェースに適合させることで段階的な移行を可能にする
     /// </summary>
+    public enum TankType
+    {
+        Player,
+        AI
+    }
+
     [Serializable]
     public class TankManager : ITankController
     {
         [Header("Tank Settings")]
+        public TankType m_TankType = TankType.Player;
         public Color m_PlayerColor;
         public Transform m_SpawnPoint;
+        [HideInInspector] public string m_PlayerName;
 
         [HideInInspector] public string m_ColoredPlayerText;
         [HideInInspector] public GameObject m_Instance;
         [HideInInspector] public int m_Wins;
 
-        public int PlayerNumber { get; set; }
+        public IInputProvider InputProvider { get; private set; }
 
         private TankMovement m_Movement;
         private TankShooting m_Shooting;
@@ -30,21 +39,26 @@ namespace Complete
         /// タンクをセットアップ
         /// </summary>
         /// <param name="tankInstance">タンクのインスタンス</param>
-        public void Setup(GameObject tankInstance)
+        /// <param name="inputProvider">入力プロバイダー</param>
+        /// <param name="playerNumber">プレイヤー番号</param>
+        /// <param name="playerName">プレイヤー名</param>
+        public void Setup(GameObject tankInstance, IInputProvider inputProvider, int playerNumber, string playerName)
         {
             m_Instance = tankInstance;
+            InputProvider = inputProvider;
+            m_PlayerName = playerName;
             
             // コンポーネントを取得
             m_Movement = m_Instance.GetComponent<TankMovement>();
             m_Shooting = m_Instance.GetComponent<TankShooting>();
             m_CanvasGameObject = m_Instance.GetComponentInChildren<Canvas>().gameObject;
 
-            // プレイヤー番号を設定
-            m_Movement.m_PlayerNumber = PlayerNumber;
-            m_Shooting.m_PlayerNumber = PlayerNumber;
+            // 各コンポーネントにInputProviderを設定
+            m_Movement.Setup(InputProvider);
+            m_Shooting.Setup(InputProvider);
 
             // プレイヤーテキストを作成
-            m_ColoredPlayerText = "<color=#" + ColorUtility.ToHtmlStringRGB(m_PlayerColor) + ">PLAYER " + PlayerNumber + "</color>";
+            m_ColoredPlayerText = "<color=#" + ColorUtility.ToHtmlStringRGB(m_PlayerColor) + ">" + m_PlayerName + "</color>";
 
             // マテリアルの色を設定
             SetTankColor();
