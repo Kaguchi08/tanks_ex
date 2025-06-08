@@ -14,6 +14,7 @@ namespace Complete.GameStates
     {
         private readonly Text _messageText;
         private readonly ITankController[] _tankControllers;
+        private readonly CameraControl _cameraControl;
 
         public string StateName => "Round Playing";
 
@@ -21,12 +22,21 @@ namespace Complete.GameStates
         {
             _messageText = messageText;
             _tankControllers = tankControllers;
+            
+            // GameManagerから参照を取得
+            _cameraControl = Object.FindObjectOfType<CameraControl>();
         }
 
         public async UniTask EnterAsync(System.Threading.CancellationToken token)
         {
             // プレイヤーがタンクを制御できるようにする
             EnableTankControl();
+
+            // TPSカメラに切り替え
+            if (_cameraControl != null)
+            {
+                _cameraControl.ActivateTpsCamera(true);
+            }
 
             // 画面からテキストを消去
             _messageText.text = string.Empty;
