@@ -35,6 +35,9 @@ namespace Complete.GameStates
             ResetAllTanks();
             DisableTankControl();
 
+            // 俯瞰視点カメラに設定（TPSカメラを無効化）
+            _cameraControl.ActivateTpsCamera(false);
+            
             // カメラの位置とサイズを設定
             _cameraControl.SetStartPositionAndSize();
 

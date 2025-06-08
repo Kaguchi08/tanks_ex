@@ -15,6 +15,7 @@ namespace Complete.GameStates
         private readonly Text _messageText;
         private readonly ITankController[] _tankControllers;
         private readonly int _numRoundsToWin;
+        private readonly CameraControl _cameraControl;
 
         public string StateName => "Round Ending";
 
@@ -27,12 +28,21 @@ namespace Complete.GameStates
             _messageText = messageText;
             _tankControllers = tankControllers;
             _numRoundsToWin = numRoundsToWin;
+            
+            // GameManagerから参照を取得
+            _cameraControl = Object.FindObjectOfType<CameraControl>();
         }
 
         public async UniTask EnterAsync(System.Threading.CancellationToken token)
         {
             // タンクの制御を停止
             DisableTankControl();
+            
+            // 俯瞰視点カメラに戻す
+            if (_cameraControl != null)
+            {
+                _cameraControl.ActivateTpsCamera(false);
+            }
 
             // 前のラウンドの勝者をクリア
             RoundWinner = null;

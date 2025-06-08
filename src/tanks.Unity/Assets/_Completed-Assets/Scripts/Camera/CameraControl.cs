@@ -9,26 +9,140 @@ namespace Complete
         public float m_MinSize = 6.5f;                  // The smallest orthographic size the camera can be.
         [HideInInspector] public Transform[] m_Targets; // All the targets the camera needs to encompass.
 
+        [Header("TPS Camera Settings")]
+        public bool m_UseTpsCamera = true;              // TPSカメラを使用するかどうか
+        public float m_TpsHeight = 1.8f;                // TPSカメラの高さ
+        public float m_TpsDistance = 2.0f;              // TPSカメラのプレイヤーからの距離
+        public float m_TpsDampTime = 0.1f;              // TPSカメラの遷移時間
+        public float m_TpsFieldOfView = 30f;            // TPSカメラの視野角
+        public float m_TpsOffsetX = 0f;                 // TPSカメラの横オフセット（負の値で左、正の値で右）
+        
+        [Header("Obstacle Transparency")]
+        public bool m_UseObstacleTransparency = true;   // 障害物の透明化を使用するかどうか
 
         private Camera m_Camera;                        // Used for referencing the camera.
         private float m_ZoomSpeed;                      // Reference speed for the smooth damping of the orthographic size.
         private Vector3 m_MoveVelocity;                 // Reference velocity for the smooth damping of the position.
         private Vector3 m_DesiredPosition;              // The position the camera is moving towards.
-
+        
+        private bool m_IsTpsActive = false;             // TPSカメラが有効かどうか
+        private Vector3 m_TpsVelocity;                  // TPSカメラの移動速度参照
+        private Vector3 m_TpsDesiredPosition;           // TPSカメラの目標位置
+        private Quaternion m_OriginalRotation;          // 元の回転を保持
+        private float m_OriginalFieldOfView;            // 元の視野角を保持
+        private Vector3 m_LastTargetForward = Vector3.forward; // 前回のプレイヤーの向き
+        private CameraObstacleHandler m_ObstacleHandler; // 障害物透明化ハンドラー
 
         private void Awake ()
         {
-            m_Camera = GetComponentInChildren<Camera> ();
+            m_Camera = GetComponentInChildren<Camera>();
+            m_OriginalRotation = transform.rotation;
+            m_OriginalFieldOfView = m_Camera.fieldOfView;
+            
+            // 障害物透明化ハンドラーの取得またはコンポーネントの追加
+            m_ObstacleHandler = GetComponent<CameraObstacleHandler>();
+            if (m_ObstacleHandler == null && m_UseObstacleTransparency)
+            {
+                m_ObstacleHandler = gameObject.AddComponent<CameraObstacleHandler>();
+            }
         }
 
 
         private void FixedUpdate ()
         {
-            // Move the camera towards a desired position.
-            Move ();
+            if (m_IsTpsActive && m_UseTpsCamera && m_Targets.Length > 0)
+            {
+                // TPS視点の場合、プレイヤー1を追従
+                MoveTps();
+            }
+            else
+            {
+                // 俯瞰視点の場合
+                // Move the camera towards a desired position.
+                Move();
 
-            // Change the size of the camera based.
-            Zoom ();
+                // Change the size of the camera based.
+                Zoom();
+            }
+        }
+
+        // TPSカメラをアクティブにする
+        public void ActivateTpsCamera(bool activate)
+        {
+            m_IsTpsActive = activate && m_UseTpsCamera;
+            
+            if (m_IsTpsActive)
+            {
+                m_Camera.orthographic = false;
+                m_Camera.fieldOfView = m_TpsFieldOfView;
+                // TPS起動時に即座に位置と回転を設定
+                if (m_Targets != null && m_Targets.Length > 0 && m_Targets[0] != null)
+                {
+                    Transform targetTank = m_Targets[0];
+                    m_LastTargetForward = targetTank.forward;
+                    transform.position = targetTank.position 
+                        - m_LastTargetForward * m_TpsDistance // タンクの後ろ（安定した向きを使用）
+                        + Vector3.up * m_TpsHeight // 高さオフセット
+                        + Vector3.Cross(Vector3.up, m_LastTargetForward).normalized * m_TpsOffsetX; // 安定した横オフセット
+                    m_TpsVelocity = Vector3.zero;
+                    // プレイヤーを注視する
+                    Vector3 lookDir = targetTank.position - transform.position;
+                    if (lookDir != Vector3.zero)
+                    {
+                        transform.rotation = Quaternion.LookRotation(lookDir);
+                    }
+                    
+                    // 障害物透明化の設定
+                    if (m_ObstacleHandler != null && m_UseObstacleTransparency)
+                    {
+                        m_ObstacleHandler.SetTarget(targetTank, true);
+                    }
+                }
+            }
+            else
+            {
+                m_Camera.orthographic = true;
+                // 視野角を元に戻す
+                m_Camera.fieldOfView = m_OriginalFieldOfView;
+                SetStartPositionAndSize();
+                
+                // 障害物透明化を無効化
+                if (m_ObstacleHandler != null)
+                {
+                    m_ObstacleHandler.SetTarget(null, false);
+                }
+            }
+        }
+
+        // TPSカメラの移動処理
+        private void MoveTps()
+        {
+            if (m_Targets == null || m_Targets.Length == 0 || m_Targets[0] == null)
+                return;
+
+            Transform targetTank = m_Targets[0];
+            
+            // プレイヤーの向きが大きく変わった場合のみ更新（安定性向上）
+            if (Vector3.Angle(targetTank.forward, m_LastTargetForward) > 5f)
+            {
+                m_LastTargetForward = targetTank.forward;
+            }
+            
+            // プレイヤーの向きに合わせて後ろに配置
+            m_TpsDesiredPosition = targetTank.position 
+                - m_LastTargetForward * m_TpsDistance // タンクの後ろ（安定した向きを使用）
+                + Vector3.up * m_TpsHeight // 高さオフセット
+                + Vector3.Cross(Vector3.up, m_LastTargetForward).normalized * m_TpsOffsetX; // 安定した横オフセット
+            
+            transform.position = Vector3.SmoothDamp(transform.position, m_TpsDesiredPosition, ref m_TpsVelocity, m_TpsDampTime);
+            
+            // プレイヤーを注視する
+            Vector3 lookDirection = targetTank.position - transform.position;
+            if (lookDirection != Vector3.zero)
+            {
+                Quaternion targetRotation = Quaternion.LookRotation(lookDirection);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, m_TpsDampTime * 5f);
+            }
         }
 
 
@@ -39,6 +153,12 @@ namespace Complete
 
             // Smoothly transition to that position.
             transform.position = Vector3.SmoothDamp(transform.position, m_DesiredPosition, ref m_MoveVelocity, m_DampTime);
+            
+            // 俯瞰視点の場合、元の回転に戻す
+            if (!m_IsTpsActive)
+            {
+                transform.rotation = m_OriginalRotation;
+            }
         }
 
 
@@ -119,6 +239,11 @@ namespace Complete
 
         public void SetStartPositionAndSize ()
         {
+            // 俯瞰視点に戻す（元の回転を復元）
+            m_IsTpsActive = false;
+            m_Camera.orthographic = true;
+            transform.rotation = m_OriginalRotation;
+            
             // Find the desired position.
             FindAveragePosition ();
 
