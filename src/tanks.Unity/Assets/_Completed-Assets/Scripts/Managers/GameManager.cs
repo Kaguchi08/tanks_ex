@@ -21,12 +21,14 @@ namespace Complete
         public int m_NumRoundsToWin = 5;
         public float m_StartDelay = 3f;
         public float m_EndDelay = 3f;
+        public bool m_UseNetworkMode = false;
 
         [Header("References")]
         public CameraControl m_CameraControl;
         public Text m_MessageText;
         public GameObject m_TankPrefab;
         public TankManager[] m_Tanks;     // 既存のTankManagerを使用（ITankControllerインターフェース対応済み）
+        public NetworkManager m_NetworkManager;
 
         
         private ITankController[] _tankControllers;
@@ -34,6 +36,13 @@ namespace Complete
 
         private void Start()
         {
+            // ネットワークモードの設定を反映
+            if (m_NetworkManager != null)
+            {
+                // NetworkManagerのネットワークモード設定を反映
+                m_UseNetworkMode = m_NetworkManager.IsNetworkMode;
+            }
+
             // タンクを生成してセットアップ
             SpawnAllTanks();
             SetCameraTargets();
@@ -75,6 +84,20 @@ namespace Complete
 
                 // タンクをセットアップ
                 m_Tanks[i].Setup(tankInstance, inputProvider, playerNumber, playerName);
+                
+                // ネットワークモードの場合、TankShootingにネットワーク通知機能を追加
+                if (m_UseNetworkMode && m_NetworkManager != null)
+                {
+                    TankShooting shooting = tankInstance.GetComponent<TankShooting>();
+                    if (shooting != null)
+                    {
+                        // オリジナルのFireメソッドを呼び出した後、ネットワーク通知を行うメソッドを作成
+                        shooting.OnFired += () => {
+                            // ネットワーク経由で発射通知
+                            m_NetworkManager.FireAsync();
+                        };
+                    }
+                }
             }
         }
 
