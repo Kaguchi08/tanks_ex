@@ -1,5 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UniRx;
+using UniRx.Triggers;
 
 namespace Complete
 {
@@ -29,10 +31,16 @@ namespace Complete
             _networkModeToggle.isOn = _networkManager.IsNetworkMode;
             UpdateUI();
 
-            // イベントリスナーを設定
-            _networkModeToggle.onValueChanged.AddListener(OnNetworkModeToggleChanged);
-            _connectButton.onClick.AddListener(OnConnectButtonClicked);
-            _disconnectButton.onClick.AddListener(OnDisconnectButtonClicked);
+            // UniRxでイベントを購読
+            _networkModeToggle.OnValueChangedAsObservable()
+                .Subscribe(isOn => OnNetworkModeToggleChanged(isOn))
+                .AddTo(this);
+            _connectButton.OnClickAsObservable()
+                .Subscribe(_ => { OnConnectButtonClicked(); UpdateUI(); })
+                .AddTo(this);
+            _disconnectButton.OnClickAsObservable()
+                .Subscribe(_ => { OnDisconnectButtonClicked(); UpdateUI(); })
+                .AddTo(this);
         }
 
         private void Update()

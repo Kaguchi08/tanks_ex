@@ -12,8 +12,9 @@ namespace Complete
     /// </summary>
     public class TankShooting : MonoBehaviour
     {
-        // 発射時のイベント
-        public event System.Action OnFired;
+        // 発射時のイベント (UniRx)
+        readonly Subject<Unit> _onFiredSubject = new Subject<Unit>();
+        public IObservable<Unit> OnFiredObservable => _onFiredSubject;
         [Header("Player Settings")]
         public int m_PlayerNumber = 1;
 
@@ -152,7 +153,7 @@ namespace Complete
             m_CurrentLaunchForce = m_MinLaunchForce;
             
             // 発射イベントを通知
-            OnFired?.Invoke();
+            _onFiredSubject.OnNext(Unit.Default);
         }
     }
 }

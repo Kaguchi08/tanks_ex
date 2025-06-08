@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UniRx;
 using Complete.Interfaces;
 using Complete.GameStates;
 using Complete.Input;
@@ -88,14 +89,13 @@ namespace Complete
                 // ネットワークモードの場合、TankShootingにネットワーク通知機能を追加
                 if (m_UseNetworkMode && m_NetworkManager != null)
                 {
-                    TankShooting shooting = tankInstance.GetComponent<TankShooting>();
+                    var shooting = tankInstance.GetComponent<TankShooting>();
                     if (shooting != null)
                     {
-                        // オリジナルのFireメソッドを呼び出した後、ネットワーク通知を行うメソッドを作成
-                        shooting.OnFired += () => {
-                            // ネットワーク経由で発射通知
-                            m_NetworkManager.FireAsync();
-                        };
+                        // 発射イベントをUniRxで購読し、ネットワーク通知を行う
+                        shooting.OnFiredObservable
+                            .Subscribe(_ => m_NetworkManager.FireAsync())
+                            .AddTo(this);
                     }
                 }
             }
