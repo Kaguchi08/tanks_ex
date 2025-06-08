@@ -11,10 +11,10 @@ namespace Complete
 
         [Header("TPS Camera Settings")]
         public bool m_UseTpsCamera = true;              // TPSカメラを使用するかどうか
-        public float m_TpsHeight = 1.8f;                // TPSカメラの高さ
-        public float m_TpsDistance = 2.0f;              // TPSカメラのプレイヤーからの距離
-        public float m_TpsDampTime = 0.1f;              // TPSカメラの遷移時間
-        public float m_TpsFieldOfView = 30f;            // TPSカメラの視野角
+        public float m_TpsHeight = 1.0f;                // TPSカメラの高さ
+        public float m_TpsDistance = 4.0f;              // TPSカメラのプレイヤーからの距離
+        public float m_TpsDampTime = 0.05f;              // TPSカメラの遷移時間
+        public float m_TpsFieldOfView = 10f;            // TPSカメラの視野角
         public float m_TpsOffsetX = 0f;                 // TPSカメラの横オフセット（負の値で左、正の値で右）
         
         [Header("Obstacle Transparency")]

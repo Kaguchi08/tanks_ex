@@ -36,26 +36,12 @@ namespace Complete
         [Tooltip("シーンビューにギズモを描画するかどうか")]
         public bool m_DrawGizmos = true;                 // ギズモを描画
 
-        [Tooltip("マテリアルのレンダリングモード設定方法")]
-        public enum TransparencyMode
-        {
-            StandardShader,    // 標準シェーダー（レンダリングモードを変更）
-            AlphaOnly,         // アルファ値のみ変更（シェーダー設定は変更しない）
-            URP,               // Universal Render Pipeline用
-            MaterialPropertyBlock, // MaterialPropertyBlockを使用（マテリアルを変更せず）
-            Both               // 複数の方法を試行
-        }
-        
-        [Tooltip("透明化のレンダリングモード設定方法")]
-        public TransparencyMode m_TransparencyMode = TransparencyMode.URP;  // URPをデフォルトに設定
-
         private Dictionary<Renderer, Material[]> m_OriginalMaterials = new Dictionary<Renderer, Material[]>();
         private List<Renderer> m_CurrentTransparentObjects = new List<Renderer>();
         private Camera m_Camera;
         private Transform m_Target;
         private CancellationTokenSource m_CancellationTokenSource;
         private Dictionary<Renderer, Material[]> m_TransparentMaterials = new Dictionary<Renderer, Material[]>();
-        private Dictionary<Renderer, MaterialPropertyBlock> m_PropertyBlocks = new Dictionary<Renderer, MaterialPropertyBlock>();
 
         private void Awake()
         {
@@ -86,17 +72,6 @@ namespace Complete
                 }
             }
             m_TransparentMaterials.Clear();
-            
-            // PropertyBlockのクリーンアップ
-            foreach (var renderer in m_PropertyBlocks.Keys)
-            {
-                if (renderer != null)
-                {
-                    // 空のPropertyBlockを適用して元に戻す
-                    renderer.SetPropertyBlock(null);
-                }
-            }
-            m_PropertyBlocks.Clear();
         }
 
         /// <summary>
@@ -230,38 +205,8 @@ namespace Complete
                 // 既存のマテリアルをコピー
                 transparentMaterials[i] = new Material(renderer.sharedMaterials[i]);
                 
-                // 選択した透明化モードに基づいて処理
-                switch (m_TransparencyMode)
-                {
-                    case TransparencyMode.StandardShader:
-                        ApplyStandardShaderTransparency(transparentMaterials[i], renderer.name);
-                        break;
-                        
-                    case TransparencyMode.AlphaOnly:
-                        ApplyAlphaOnlyTransparency(transparentMaterials[i]);
-                        break;
-                        
-                    case TransparencyMode.URP:
-                        ApplyURPTransparency(transparentMaterials[i], renderer.name);
-                        break;
-                        
-                    case TransparencyMode.MaterialPropertyBlock:
-                        // マテリアルのコピーは不要なので元に戻す
-                        if (m_TransparentMaterials.ContainsKey(renderer))
-                        {
-                            m_TransparentMaterials.Remove(renderer);
-                        }
-                        ApplyMaterialPropertyBlock(renderer);
-                        return; // マテリアル適用をスキップするためにreturn
-                        
-                    case TransparencyMode.Both:
-                    default:
-                        // 複数の方法を試行
-                        ApplyURPTransparency(transparentMaterials[i], renderer.name);
-                        ApplyStandardShaderTransparency(transparentMaterials[i], renderer.name);
-                        ApplyAlphaOnlyTransparency(transparentMaterials[i]);
-                        break;
-                }
+                // URPのみの透明化設定
+                ApplyURPTransparency(transparentMaterials[i], renderer.name);
             }
 
             // 透明マテリアルをキャッシュ
@@ -273,27 +218,7 @@ namespace Complete
             // デバッグログ
             if (m_LogDebugInfo)
             {
-                Debug.Log($"透明化適用: {renderer.name}, マテリアル数: {transparentMaterials.Length}");
-            }
-        }
-        
-        // 特定のプロパティのアルファ値を安全に設定
-        private void TrySetAlpha(Material material, string propertyName, float alphaValue)
-        {
-            if (material.HasProperty(propertyName))
-            {
-                Color color = material.GetColor(propertyName);
-                color.a = alphaValue;
-                material.SetColor(propertyName, color);
-            }
-        }
-        
-        // フロート値を安全に設定
-        private void TrySetFloat(Material material, string propertyName, float value)
-        {
-            if (material.HasProperty(propertyName))
-            {
-                material.SetFloat(propertyName, value);
+                Debug.Log($"URP透明化適用: {renderer.name}, マテリアル数: {transparentMaterials.Length}");
             }
         }
         
@@ -388,147 +313,6 @@ namespace Complete
             }
         }
         
-        // 標準シェーダー用の透明化処理
-        private void ApplyStandardShaderTransparency(Material material, string objectName)
-        {
-            try
-            {
-                // 標準シェーダーの場合の透明設定
-                material.SetFloat("_Mode", 3); // Transparent モード
-                material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                material.SetInt("_ZWrite", 0);
-                material.DisableKeyword("_ALPHATEST_ON");
-                material.EnableKeyword("_ALPHABLEND_ON");
-                material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-                material.renderQueue = 3000;
-                
-                // デバッグログ
-                if (m_LogDebugInfo)
-                {
-                    Debug.Log($"標準シェーダー透明化適用: {objectName}");
-                }
-            }
-            catch (System.Exception e)
-            {
-                // 標準シェーダーでない場合のエラーをキャッチ
-                if (m_LogDebugInfo)
-                {
-                    Debug.LogWarning($"標準シェーダー透明化設定に失敗: {objectName} - {e.Message}");
-                }
-            }
-        }
-        
-        // アルファ値のみ変更
-        private void ApplyAlphaOnlyTransparency(Material material)
-        {
-            // 標準の_Colorプロパティ
-            if (material.HasProperty("_Color"))
-            {
-                Color color = material.color;
-                color.a = m_TransparencyAmount;
-                material.color = color;
-            }
-            
-            // URP/HDRP用の_BaseColorプロパティ
-            if (material.HasProperty("_BaseColor"))
-            {
-                Color baseColor = material.GetColor("_BaseColor");
-                baseColor.a = m_TransparencyAmount;
-                material.SetColor("_BaseColor", baseColor);
-            }
-            
-            // その他の一般的なプロパティ
-            TrySetAlpha(material, "_TintColor", m_TransparencyAmount);
-            TrySetAlpha(material, "_MainColor", m_TransparencyAmount);
-            TrySetAlpha(material, "_EmissionColor", m_TransparencyAmount);
-            
-            // 透明度関連のプロパティを直接設定
-            TrySetFloat(material, "_Transparency", m_TransparencyAmount);
-            TrySetFloat(material, "_Alpha", m_TransparencyAmount);
-            TrySetFloat(material, "_Opacity", m_TransparencyAmount);
-        }
-
-        // MaterialPropertyBlockを使用した透明化
-        private void ApplyMaterialPropertyBlock(Renderer renderer)
-        {
-            try
-            {
-                // PropertyBlockがなければ新規作成
-                if (!m_PropertyBlocks.ContainsKey(renderer))
-                {
-                    m_PropertyBlocks[renderer] = new MaterialPropertyBlock();
-                }
-                
-                // 現在のPropertyBlockを取得
-                MaterialPropertyBlock block = m_PropertyBlocks[renderer];
-                renderer.GetPropertyBlock(block);
-                
-                // URPの_BaseColorプロパティを設定
-                if (renderer.sharedMaterial.HasProperty("_BaseColor"))
-                {
-                    Color baseColor = renderer.sharedMaterial.GetColor("_BaseColor");
-                    baseColor.a = m_TransparencyAmount;
-                    block.SetColor("_BaseColor", baseColor);
-                }
-                
-                // 標準の_Colorプロパティを設定
-                if (renderer.sharedMaterial.HasProperty("_Color"))
-                {
-                    Color color = renderer.sharedMaterial.GetColor("_Color");
-                    color.a = m_TransparencyAmount;
-                    block.SetColor("_Color", color);
-                }
-                
-                // その他のプロパティを設定
-                if (renderer.sharedMaterial.HasProperty("_Surface"))
-                {
-                    block.SetFloat("_Surface", 1); // 1 = Transparent
-                }
-                
-                // レンダラーにPropertyBlockを適用
-                renderer.SetPropertyBlock(block);
-                
-                // デバッグログ
-                if (m_LogDebugInfo)
-                {
-                    Debug.Log($"PropertyBlock透明化適用: {renderer.name}, Alpha: {m_TransparencyAmount}");
-                }
-                
-                // この透明化されたオブジェクトを追跡
-                if (!m_CurrentTransparentObjects.Contains(renderer))
-                {
-                    m_CurrentTransparentObjects.Add(renderer);
-                }
-            }
-            catch (System.Exception e)
-            {
-                if (m_LogDebugInfo)
-                {
-                    Debug.LogWarning($"PropertyBlock透明化設定に失敗: {renderer.name} - {e.Message}");
-                }
-            }
-        }
-        
-        // MaterialPropertyBlockをリセット
-        private void ResetMaterialPropertyBlock(Renderer renderer)
-        {
-            if (renderer != null && m_PropertyBlocks.ContainsKey(renderer))
-            {
-                // 空のPropertyBlockを適用して元に戻す
-                MaterialPropertyBlock block = new MaterialPropertyBlock();
-                renderer.SetPropertyBlock(block);
-                
-                // キャッシュから削除
-                m_PropertyBlocks.Remove(renderer);
-                
-                if (m_LogDebugInfo)
-                {
-                    Debug.Log($"PropertyBlock透明化リセット: {renderer.name}");
-                }
-            }
-        }
-        
         /// <summary>
         /// 特定のオブジェクトのマテリアルを元に戻す
         /// </summary>
@@ -536,13 +320,8 @@ namespace Complete
         {
             if (renderer != null)
             {
-                // MaterialPropertyBlockのリセット
-                if (m_TransparencyMode == TransparencyMode.MaterialPropertyBlock)
-                {
-                    ResetMaterialPropertyBlock(renderer);
-                }
                 // 通常のマテリアル復元処理
-                else if (m_OriginalMaterials.ContainsKey(renderer))
+                if (m_OriginalMaterials.ContainsKey(renderer))
                 {
                     try
                     {
