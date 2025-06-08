@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
+using Cysharp.Threading.Tasks;
+using System.Threading;
 
 namespace Complete
 {
@@ -20,11 +22,7 @@ namespace Complete
         [Tooltip("透明化の対象となるレイヤー (これらのレイヤーにあるオブジェクトが透明化されます)")]
         public LayerMask m_ObstacleLayers;               // 透明化の対象となるレイヤー
         
-        [Tooltip("透明化から除外するレイヤー (これらのレイヤーにあるオブジェクトは透明化されません)")]
-        public LayerMask m_IgnoreLayers;                 // 透明化から除外するレイヤー
         public float m_CheckInterval = 0.1f;             // 障害物チェックの間隔（秒）
-        public bool m_EnableFadeEffect = true;           // フェード効果を有効にするかどうか
-        public float m_FadeSpeed = 8.0f;                 // フェード速度
         
         [Header("Debug Settings")]
         [Tooltip("デバッグ用にレイを可視化するかどうか")]
@@ -55,7 +53,7 @@ namespace Complete
         private List<Renderer> m_CurrentTransparentObjects = new List<Renderer>();
         private Camera m_Camera;
         private Transform m_Target;
-        private float m_LastCheckTime;
+        private CancellationTokenSource m_CancellationTokenSource;
         private Dictionary<Renderer, Material[]> m_TransparentMaterials = new Dictionary<Renderer, Material[]>();
         private Dictionary<Renderer, MaterialPropertyBlock> m_PropertyBlocks = new Dictionary<Renderer, MaterialPropertyBlock>();
 
@@ -101,15 +99,6 @@ namespace Complete
             m_PropertyBlocks.Clear();
         }
 
-        private void Update()
-        {
-            if (m_EnableTransparency && m_Target != null && Time.time > m_LastCheckTime + m_CheckInterval)
-            {
-                m_LastCheckTime = Time.time;
-                HandleObstacleTransparency();
-            }
-        }
-
         /// <summary>
         /// ターゲットを設定（アクティブ化時に呼び出す）
         /// </summary>
@@ -123,6 +112,19 @@ namespace Complete
             if (!active)
             {
                 RestoreAllMaterials();
+            }
+
+            // UniTask を使った非同期障害物チェック開始/停止
+            if (active)
+            {
+                m_CancellationTokenSource?.Cancel();
+                m_CancellationTokenSource = new CancellationTokenSource();
+                _ = ObstacleCheckLoopAsync(m_CancellationTokenSource.Token);
+            }
+            else
+            {
+                m_CancellationTokenSource?.Cancel();
+                m_CancellationTokenSource = null;
             }
         }
 
@@ -172,10 +174,6 @@ namespace Complete
                 
                 // プレイヤー自身は除外
                 if (hit.transform == m_Target || hit.transform.IsChildOf(m_Target))
-                    continue;
-                    
-                // 指定した除外レイヤーに属するオブジェクトは透明化しない
-                if ((m_IgnoreLayers.value & (1 << hit.transform.gameObject.layer)) != 0)
                     continue;
 
                 Renderer renderer = hit.collider.GetComponent<Renderer>();
@@ -639,6 +637,23 @@ namespace Complete
                     Bounds bounds = renderer.bounds;
                     Gizmos.DrawWireCube(bounds.center, bounds.size);
                 }
+            }
+        }
+
+        // UniTaskを使った非同期障害物チェック
+        private async UniTaskVoid ObstacleCheckLoopAsync(CancellationToken token)
+        {
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    HandleObstacleTransparency();
+                    await UniTask.Delay((int)(m_CheckInterval * 1000), cancellationToken: token);
+                }
+            }
+            catch (System.OperationCanceledException)
+            {
+                // キャンセル時は何もしない
             }
         }
     }
