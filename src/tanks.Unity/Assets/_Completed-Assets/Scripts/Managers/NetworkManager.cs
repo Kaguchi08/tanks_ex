@@ -1,5 +1,6 @@
 using Cysharp.Threading.Tasks;
 using Grpc.Net.Client;
+using MagicOnion;
 using MagicOnion.Client;
 using System;
 using System.Collections.Generic;
@@ -16,7 +17,7 @@ namespace Complete
     {
         [Header("Network Settings")]
         [SerializeField] private string _serverAddress = "localhost";
-        [SerializeField] private int _serverPort = 5000;
+        [SerializeField] private int _serverPort = 5044;
         [SerializeField] private bool _useNetworkMode = false;
 
         [Header("Game References")]
@@ -25,7 +26,7 @@ namespace Complete
 
         // MagicOnionのクライアント
         private ITankGameHub _client;
-        private GrpcChannel _channel;
+        private GrpcChannelx _channel;
         private int _myPlayerId = -1;
         private Dictionary<int, GameObject> _remoteTanks = new Dictionary<int, GameObject>();
         
@@ -62,7 +63,7 @@ namespace Complete
                 Debug.Log($"サーバーに接続を試みています: {_serverAddress}:{_serverPort}");
                 
                 // チャンネルを作成
-                _channel = GrpcChannel.ForAddress($"http://{_serverAddress}:{_serverPort}");
+                _channel = GrpcChannelx.ForAddress($"http://{_serverAddress}:{_serverPort}");
                 
                 // StreamingHubクライアントを作成
                 _client = await StreamingHubClient.ConnectAsync<ITankGameHub, ITankGameHubReceiver>(_channel, this);
