@@ -102,14 +102,48 @@ namespace Tanks.Server.Services
             return Task.FromResult(true);
         }
 
-        public Task<bool> FireAsync(int playerID)
+        public Task<bool> FireAsync(ShellFireData fireData)
         {
-            if (_room == null)
+            if (_currentPlayer == null || _room == null)
             {
                 return Task.FromResult(false);
             }
 
-            _room.All.OnFire(playerID);
+            fireData.PlayerID = _currentPlayer.PlayerID;
+            _room.All.OnFire(fireData);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> UpdateHealthAsync(int playerID, float currentHealth)
+        {
+            if (_currentPlayer == null || _room == null)
+            {
+                return Task.FromResult(false);
+            }
+
+            _room.All.OnHealthUpdate(playerID, currentHealth);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> ApplyExplosionForceAsync(ExplosionForceData explosionData)
+        {
+            if (_currentPlayer == null || _room == null)
+            {
+                return Task.FromResult(false);
+            }
+
+            _room.All.OnExplosionForce(explosionData);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> NotifyGameResultAsync(GameResultData gameResult)
+        {
+            if (_currentPlayer == null || _room == null)
+            {
+                return Task.FromResult(false);
+            }
+
+            _room.All.OnGameResult(gameResult);
             return Task.FromResult(true);
         }
 
