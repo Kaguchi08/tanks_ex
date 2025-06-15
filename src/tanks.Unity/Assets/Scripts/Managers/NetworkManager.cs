@@ -213,17 +213,71 @@ namespace Complete
         /// <summary>
         /// 発射処理
         /// </summary>
-        public async UniTaskVoid FireAsync()
+        public async UniTaskVoid FireAsync(ShellFireData fireData)
         {
             if (_client != null && _myPlayerId > 0)
             {
                 try
                 {
-                    await _client.FireAsync(_myPlayerId);
+                    await _client.FireAsync(fireData);
                 }
                 catch (Exception ex)
                 {
                     Debug.LogError($"発射エラー: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// ヘルス更新処理
+        /// </summary>
+        public async UniTaskVoid UpdateHealthAsync(int playerID, float currentHealth)
+        {
+            if (_client != null)
+            {
+                try
+                {
+                    await _client.UpdateHealthAsync(playerID, currentHealth);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"ヘルス更新エラー: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 爆発力適用処理
+        /// </summary>
+        public async UniTaskVoid ApplyExplosionForceAsync(ExplosionForceData explosionData)
+        {
+            if (_client != null)
+            {
+                try
+                {
+                    await _client.ApplyExplosionForceAsync(explosionData);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"爆発力適用エラー: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// ゲーム結果通知処理
+        /// </summary>
+        public async UniTaskVoid NotifyGameResultAsync(GameResultData gameResult)
+        {
+            if (_client != null)
+            {
+                try
+                {
+                    await _client.NotifyGameResultAsync(gameResult);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"ゲーム結果通知エラー: {ex.Message}");
                 }
             }
         }
@@ -346,13 +400,19 @@ namespace Complete
                 var tankManager = GameUtility.GetTankManagerByPlayerId(_gameManager.m_Tanks, normalizedPlayerID);
                 if (tankManager?.m_Instance != null)
                 {
-                    var transform = tankManager.m_Instance.transform;
-                    transform.position = new Vector3(
-                        positionData.PositionX,
-                        positionData.PositionY,
-                        positionData.PositionZ
-                    );
-                    transform.rotation = Quaternion.Euler(0, positionData.RotationY, 0);
+                    var movement = tankManager.GetTankMovement();
+                    
+                    // 物理演算オーバーライド中は位置同期をスキップ
+                    if (movement == null || !movement.IsPhysicsOverride)
+                    {
+                        var transform = tankManager.m_Instance.transform;
+                        transform.position = new Vector3(
+                            positionData.PositionX,
+                            positionData.PositionY,
+                            positionData.PositionZ
+                        );
+                        transform.rotation = Quaternion.Euler(0, positionData.RotationY, 0);
+                    }
                 }
             }
             else
@@ -362,35 +422,89 @@ namespace Complete
             }
         }
 
-        public void OnFire(int playerID)
+        public void OnFire(ShellFireData fireData)
         {
             // PlayerIDを正規化
-            int normalizedPlayerID = NormalizePlayerIDForNetworking(playerID);
+            int normalizedPlayerID = NormalizePlayerIDForNetworking(fireData.PlayerID);
             
             // 自分の発射は無視
             if (normalizedPlayerID == _myPlayerId)
                 return;
 
-            // RemoteInputProviderに発射コマンドを設定
-            if (_remoteInputProviders.TryGetValue(normalizedPlayerID, out RemoteInputProvider provider))
+            // リモートプレイヤーのタンクで砲弾を発射
+            var tankManager = GameUtility.GetTankManagerByPlayerId(_gameManager.m_Tanks, normalizedPlayerID);
+            if (tankManager != null)
             {
-                // FireButtonを一瞬だけtrueにして発射をトリガー
-                provider.SetInput(0, 0, true);
-                
-                // 少し後にfalseに戻す（UniTaskで非同期実行）
-                ResetFireButtonAsync(provider).Forget();
+                var shooting = tankManager.GetTankShooting();
+                if (shooting != null)
+                {
+                    shooting.FireFromNetwork(fireData);
+                }
             }
         }
 
-
-        /// <summary>
-        /// 発射ボタンを一瞬後にリセットする
-        /// </summary>
-        private async UniTaskVoid ResetFireButtonAsync(RemoteInputProvider provider)
+        public void OnHealthUpdate(int playerID, float currentHealth)
         {
-            await UniTask.Delay(100); // 100ms後
-            provider.SetInput(0, 0, false);
+            // PlayerIDを正規化
+            int normalizedPlayerID = NormalizePlayerIDForNetworking(playerID);
+            
+            // 自分のヘルス更新は無視
+            if (normalizedPlayerID == _myPlayerId)
+                return;
+
+            // リモートプレイヤーのヘルスを更新
+            var tankManager = GameUtility.GetTankManagerByPlayerId(_gameManager.m_Tanks, normalizedPlayerID);
+            if (tankManager != null)
+            {
+                var health = tankManager.GetTankHealth();
+                if (health != null)
+                {
+                    health.SetHealthFromNetwork(currentHealth);
+                }
+            }
         }
+
+        public void OnExplosionForce(ExplosionForceData explosionData)
+        {
+            // PlayerIDを正規化
+            int normalizedPlayerID = NormalizePlayerIDForNetworking(explosionData.TargetPlayerID);
+
+            // 対象タンクに爆発力を適用
+            var tankManager = GameUtility.GetTankManagerByPlayerId(_gameManager.m_Tanks, normalizedPlayerID);
+            if (tankManager?.m_Instance != null)
+            {
+                var rigidbody = tankManager.m_Instance.GetComponent<Rigidbody>();
+                var movement = tankManager.GetTankMovement();
+                
+                if (rigidbody != null && movement != null)
+                {
+                    Vector3 explosionPosition = new Vector3(explosionData.ExplosionX, explosionData.ExplosionY, explosionData.ExplosionZ);
+                    
+                    // 物理演算オーバーライドを設定（位置同期を一時停止）
+                    movement.SetPhysicsOverride(2f);
+                    
+                    // 爆発力を適用
+                    rigidbody.AddExplosionForce(explosionData.Force, explosionPosition, explosionData.Radius);
+
+                    // ダメージも適用（ネットワーク経由なので同期なし）
+                    var health = tankManager.GetTankHealth();
+                    if (health != null)
+                    {
+                        health.TakeDamageFromNetwork(explosionData.Damage);
+                    }
+                }
+            }
+        }
+
+        public void OnGameResult(GameResultData gameResult)
+        {
+            Debug.Log($"ゲーム結果を受信: 勝者={gameResult.WinnerName} (ID:{gameResult.WinnerPlayerID}), ラウンド={gameResult.RoundNumber}, ゲーム終了={gameResult.IsGameEnd}");
+            
+            // ゲーム結果をUIに反映する処理を追加可能
+            // 現在は単純にログ出力のみ
+        }
+
+
         #endregion
     }
 } 

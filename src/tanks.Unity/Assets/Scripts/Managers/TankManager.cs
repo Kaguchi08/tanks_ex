@@ -33,6 +33,7 @@ namespace Complete
 
         private TankMovement m_Movement;
         private TankShooting m_Shooting;
+        private TankHealth m_Health;
         private GameObject m_CanvasGameObject;
 
 
@@ -53,11 +54,16 @@ namespace Complete
             // コンポーネントを取得
             m_Movement = m_Instance.GetComponent<TankMovement>();
             m_Shooting = m_Instance.GetComponent<TankShooting>();
+            m_Health = m_Instance.GetComponent<TankHealth>();
             m_CanvasGameObject = m_Instance.GetComponentInChildren<Canvas>().gameObject;
 
             // 各コンポーネントにInputProviderを設定
             m_Movement.Setup(InputProvider);
             m_Shooting.Setup(InputProvider);
+            
+            // TankManagerへの参照を設定
+            m_Shooting.Initialize(this);
+            m_Health.Initialize(this);
 
             // プレイヤーテキストを作成
             m_ColoredPlayerText = "<color=#" + ColorUtility.ToHtmlStringRGB(m_PlayerColor) + ">" + m_PlayerName + "</color>";
@@ -99,6 +105,21 @@ namespace Complete
             {
                 renderer.material.color = m_PlayerColor;
             }
+        }
+
+        public TankHealth GetTankHealth()
+        {
+            return m_Health;
+        }
+
+        public TankShooting GetTankShooting()
+        {
+            return m_Shooting;
+        }
+
+        public TankMovement GetTankMovement()
+        {
+            return m_Movement;
         }
     }
 }
