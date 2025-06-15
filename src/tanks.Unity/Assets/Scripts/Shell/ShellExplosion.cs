@@ -1,5 +1,6 @@
 using UnityEngine;
 using Cysharp.Threading.Tasks;
+using Tanks.Shared;
 
 namespace Complete
 {
@@ -13,6 +14,13 @@ namespace Complete
         public float m_MaxLifeTime = 2f;                    // The time in seconds before the shell is removed.
         public float m_ExplosionRadius = 5f;                // The maximum distance away from the explosion tanks can be and are still affected.
 
+        private NetworkManager _networkManager;
+        private bool _isFromNetwork = false;
+
+        private void Awake()
+        {
+            _networkManager = FindObjectOfType<NetworkManager>();
+        }
 
         private void Start ()
         {
@@ -30,6 +38,11 @@ namespace Complete
         }
 
 
+        public void SetFromNetwork(bool fromNetwork)
+        {
+            _isFromNetwork = fromNetwork;
+        }
+
         private void OnTriggerEnter (Collider other)
         {
 			// Collect all the colliders in a sphere from the shell's current position to a radius of the explosion radius.
@@ -45,21 +58,72 @@ namespace Complete
                 if (!targetRigidbody)
                     continue;
 
-                // Add an explosion force.
-                targetRigidbody.AddExplosionForce (m_ExplosionForce, transform.position, m_ExplosionRadius);
+                // タンクマネージャーを取得してPlayerIDを特定
+                var gameManager = FindObjectOfType<GameManager>();
+                TankManager tankManager = null;
+                if (gameManager != null)
+                {
+                    tankManager = GetTankManagerFromRigidbody(gameManager, targetRigidbody);
+                }
 
-                // Find the TankHealth script associated with the rigidbody.
-                TankHealth targetHealth = targetRigidbody.GetComponent<TankHealth> ();
+                bool isMyTank = false;
+                if (_networkManager != null && _networkManager.IsNetworkMode && tankManager != null)
+                {
+                    // 自分のタンクかどうかを判定
+                    isMyTank = (tankManager.m_PlayerID == gameManager.GetMyPlayerID());
+                }
 
-                // If there is no TankHealth script attached to the gameobject, go on to the next collider.
-                if (!targetHealth)
-                    continue;
+                // ローカル砲弾でネットワークモードの場合の処理分岐
+                if (_networkManager != null && _networkManager.IsNetworkMode && !_isFromNetwork)
+                {
+                    if (isMyTank)
+                    {
+                        // 自分のタンクへのダメージ・物理力はローカルで処理
+                        // 物理演算オーバーライドを設定（位置同期を一時停止）
+                        var movement = tankManager.GetTankMovement();
+                        if (movement != null)
+                        {
+                            movement.SetPhysicsOverride(2f);
+                        }
+                        
+                        targetRigidbody.AddExplosionForce(m_ExplosionForce, transform.position, m_ExplosionRadius);
+                        
+                        TankHealth targetHealth = targetRigidbody.GetComponent<TankHealth>();
+                        if (targetHealth != null)
+                        {
+                            float damage = CalculateDamage(targetRigidbody.position);
+                            targetHealth.TakeDamage(damage);
+                        }
+                    }
+                    else if (tankManager != null)
+                    {
+                        // 相手のタンクへの効果はネットワーク経由で送信のみ（ローカル適用しない）
+                        var explosionData = new ExplosionForceData
+                        {
+                            TargetPlayerID = tankManager.m_PlayerID,
+                            ExplosionX = transform.position.x,
+                            ExplosionY = transform.position.y,
+                            ExplosionZ = transform.position.z,
+                            Force = m_ExplosionForce,
+                            Radius = m_ExplosionRadius,
+                            Damage = CalculateDamage(targetRigidbody.position)
+                        };
+                        
+                        _ = _networkManager.ApplyExplosionForceAsync(explosionData);
+                    }
+                }
+                else if (!_isFromNetwork)
+                {
+                    // ローカルモードまたはネットワーク受信砲弾でない場合は通常処理
+                    targetRigidbody.AddExplosionForce(m_ExplosionForce, transform.position, m_ExplosionRadius);
 
-                // Calculate the amount of damage the target should take based on it's distance from the shell.
-                float damage = CalculateDamage (targetRigidbody.position);
-
-                // Deal this damage to the tank.
-                targetHealth.TakeDamage (damage);
+                    TankHealth targetHealth = targetRigidbody.GetComponent<TankHealth>();
+                    if (targetHealth != null)
+                    {
+                        float damage = CalculateDamage(targetRigidbody.position);
+                        targetHealth.TakeDamage(damage);
+                    }
+                }
             }
 
             // Unparent the particles from the shell.
@@ -98,6 +162,18 @@ namespace Complete
             damage = Mathf.Max (0f, damage);
 
             return damage;
+        }
+
+        private TankManager GetTankManagerFromRigidbody(GameManager gameManager, Rigidbody rigidbody)
+        {
+            foreach (var tankManager in gameManager.m_Tanks)
+            {
+                if (tankManager.m_Instance != null && tankManager.m_Instance.GetComponent<Rigidbody>() == rigidbody)
+                {
+                    return tankManager;
+                }
+            }
+            return null;
         }
     }
 }
