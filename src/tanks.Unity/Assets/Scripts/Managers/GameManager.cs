@@ -338,18 +338,8 @@ namespace Complete
             m_Tanks[index].Setup(tankInstance, inputProvider, playerID, playerName);
             Debug.Log($"タンクセットアップ完了: {playerName}, InputProvider: {inputProvider.GetType().Name}");
             
-            // ネットワークモードの場合、TankShootingにネットワーク通知機能を追加
-            if (m_UseNetworkMode && m_NetworkManager != null && m_Tanks[index].m_TankType == TankType.Player)
-            {
-                var shooting = tankInstance.GetComponent<TankShooting>();
-                if (shooting != null)
-                {
-                    // 発射イベントをUniRxで購読し、ネットワーク通知を行う
-                    shooting.OnFiredObservable
-                        .Subscribe(_ => m_NetworkManager.FireAsync().Forget())
-                        .AddTo(this);
-                }
-            }
+            // ネットワークモードの場合は、TankShootingが自動的にネットワーク通知を行う
+            // そのためここでは特別な処理は不要
             
             Debug.Log($"=== タンク生成完了: Slot={index}, PlayerID={playerID}, Position={tankInstance.transform.position} ===");
         }
@@ -546,7 +536,7 @@ namespace Complete
                 await ExecuteStateAsync(roundPlayingState, token);
 
                 // ラウンド終了状態
-                var roundEndingState = new RoundEndingState(m_EndDelay, m_MessageText, _tankControllers, m_NumRoundsToWin);
+                var roundEndingState = new RoundEndingState(m_EndDelay, m_MessageText, _tankControllers, m_NumRoundsToWin, _roundNumber);
                 await ExecuteStateAsync(roundEndingState, token);
 
                 // ゲーム勝者がいる場合、シーンを再読み込み

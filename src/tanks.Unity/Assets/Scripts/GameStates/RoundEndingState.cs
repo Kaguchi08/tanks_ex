@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Complete.Interfaces;
 using Cysharp.Threading.Tasks;
+using Tanks.Shared;
 namespace Complete.GameStates
 {
     /// <summary>
@@ -16,21 +17,25 @@ namespace Complete.GameStates
         private readonly ITankController[] _tankControllers;
         private readonly int _numRoundsToWin;
         private readonly CameraControl _cameraControl;
+        private readonly NetworkManager _networkManager;
+        private int _roundNumber;
 
         public string StateName => "Round Ending";
 
         public TankManager RoundWinner { get; private set; }
         public TankManager GameWinner { get; private set; }
 
-        public RoundEndingState(float endDelay, Text messageText, ITankController[] tankControllers, int numRoundsToWin)
+        public RoundEndingState(float endDelay, Text messageText, ITankController[] tankControllers, int numRoundsToWin, int roundNumber = 0)
         {
             _endDelay = endDelay;
             _messageText = messageText;
             _tankControllers = tankControllers;
             _numRoundsToWin = numRoundsToWin;
+            _roundNumber = roundNumber;
             
             // GameManagerから参照を取得
             _cameraControl = Object.FindObjectOfType<CameraControl>();
+            _networkManager = Object.FindObjectOfType<NetworkManager>();
         }
 
         public async UniTask EnterAsync(System.Threading.CancellationToken token)
@@ -60,6 +65,20 @@ namespace Complete.GameStates
             // スコアとゲーム勝者に基づいてメッセージを取得し表示
             string message = CreateEndMessage();
             _messageText.text = message;
+
+            // ネットワークモードでゲーム結果を同期
+            if (_networkManager != null && _networkManager.IsNetworkMode && RoundWinner != null)
+            {
+                var gameResult = new GameResultData
+                {
+                    WinnerPlayerID = RoundWinner.m_PlayerID,
+                    RoundNumber = _roundNumber,
+                    IsGameEnd = GameWinner != null,
+                    WinnerName = RoundWinner.m_PlayerName
+                };
+                
+                _ = _networkManager.NotifyGameResultAsync(gameResult);
+            }
 
             // 指定時間待機
             await UniTask.Delay(System.TimeSpan.FromSeconds(_endDelay), cancellationToken: token);
