@@ -1,7 +1,18 @@
+using Tanks.Server.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddMagicOnion();
+
+// Register custom services
+builder.Services.AddSingleton<IPlayerManagerService, PlayerManagerService>();
+builder.Services.AddSingleton<IGameStateService, GameStateService>();
+
+// Add logging
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 var app = builder.Build();
 
