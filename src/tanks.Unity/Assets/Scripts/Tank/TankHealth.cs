@@ -19,9 +19,15 @@ namespace Complete
         private UniRx.ReactiveProperty<float> _currentHealth; // リアクティブなヘルス値
         private bool m_Dead;                                // Has the tank been reduced beyond zero health yet?
 
+        private NetworkManager _networkManager;
+        private TankManager _tankManager;
+
 
         private void Awake ()
         {
+            // ネットワークマネージャーを取得
+            _networkManager = FindObjectOfType<NetworkManager>();
+
             // Instantiate the explosion prefab and get a reference to the particle system on it.
             m_ExplosionParticles = Instantiate (m_ExplosionPrefab).GetComponent<ParticleSystem> ();
 
@@ -61,9 +67,36 @@ namespace Complete
         }
 
 
+        public void Initialize(TankManager tankManager)
+        {
+            _tankManager = tankManager;
+        }
+
         public void TakeDamage (float amount)
         {
             // Reduce current health by the amount of damage done.
+            _currentHealth.Value -= amount;
+
+            // ネットワークモードの場合、自分のタンクのみヘルス情報を同期
+            if (_networkManager != null && _networkManager.IsNetworkMode && _tankManager != null)
+            {
+                var gameManager = FindObjectOfType<GameManager>();
+                if (gameManager != null && _tankManager.m_PlayerID == gameManager.GetMyPlayerID())
+                {
+                    _ = _networkManager.UpdateHealthAsync(_tankManager.m_PlayerID, _currentHealth.Value);
+                }
+            }
+        }
+
+        public void SetHealthFromNetwork(float health)
+        {
+            // ネットワーク経由でのヘルス設定（同期用）
+            _currentHealth.Value = health;
+        }
+
+        public void TakeDamageFromNetwork(float amount)
+        {
+            // ネットワーク経由でのダメージ（同期なし）
             _currentHealth.Value -= amount;
         }
 

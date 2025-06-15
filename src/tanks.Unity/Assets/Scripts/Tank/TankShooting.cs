@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using Complete.Interfaces;
 using UniRx;
 using System;
+using Tanks.Shared;
 
 namespace Complete
 {
@@ -37,9 +38,18 @@ namespace Complete
         private bool m_Fired;
         private CompositeDisposable _disposables;
 
+        private NetworkManager _networkManager;
+        private TankManager _tankManager;
+
         public void Setup(IInputProvider inputProvider)
         {
             _inputProvider = inputProvider;
+        }
+
+        public void Initialize(TankManager tankManager)
+        {
+            _tankManager = tankManager;
+            _networkManager = FindObjectOfType<NetworkManager>();
         }
 
         private void Awake()
@@ -137,10 +147,32 @@ namespace Complete
             m_Fired = true;
 
             // シェルのインスタンスを作成
-            Rigidbody shellInstance = Instantiate(m_Shell, m_FireTransform.position, m_FireTransform.rotation) as Rigidbody;
+            var shellInstance = Instantiate(m_Shell, m_FireTransform.position, m_FireTransform.rotation) as Rigidbody;
+            var shellExplosion = shellInstance.GetComponent<ShellExplosion>();
+
+            Vector3 fireDirection = m_FireTransform.forward;
+            float currentForce = m_CurrentLaunchForce.Value;
 
             // シェルに速度を設定
-            shellInstance.velocity = m_CurrentLaunchForce.Value * m_FireTransform.forward;
+            shellInstance.velocity = currentForce * fireDirection;
+
+            // ネットワークモードの場合、発射情報を同期
+            if (_networkManager != null && _networkManager.IsNetworkMode && _tankManager != null)
+            {
+                var fireData = new ShellFireData
+                {
+                    PlayerID = _tankManager.m_PlayerID,
+                    PositionX = m_FireTransform.position.x,
+                    PositionY = m_FireTransform.position.y,
+                    PositionZ = m_FireTransform.position.z,
+                    DirectionX = fireDirection.x,
+                    DirectionY = fireDirection.y,
+                    DirectionZ = fireDirection.z,
+                    Force = currentForce
+                };
+
+                _ = _networkManager.FireAsync(fireData);
+            }
 
             // 発射音を再生
             m_ShootingAudio.clip = m_FireClip;
@@ -151,6 +183,29 @@ namespace Complete
             
             // 発射イベントを通知
             _onFiredSubject.OnNext(Unit.Default);
+        }
+
+        public void FireFromNetwork(ShellFireData fireData)
+        {
+            // ネットワークから受信した発射データで砲弾を生成
+            var position = new Vector3(fireData.PositionX, fireData.PositionY, fireData.PositionZ);
+            var direction = new Vector3(fireData.DirectionX, fireData.DirectionY, fireData.DirectionZ);
+
+            var shellInstance = Instantiate(m_Shell, position, Quaternion.LookRotation(direction)) as Rigidbody;
+            var shellExplosion = shellInstance.GetComponent<ShellExplosion>();
+            
+            // ネットワーク生成の砲弾であることをマーク
+            if (shellExplosion != null)
+            {
+                shellExplosion.SetFromNetwork(true);
+            }
+
+            // シェルに速度を設定
+            shellInstance.velocity = fireData.Force * direction;
+
+            // 発射音を再生
+            m_ShootingAudio.clip = m_FireClip;
+            m_ShootingAudio.Play();
         }
     }
 }
