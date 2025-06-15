@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Tanks.Shared;
 using UnityEngine;
+using Complete.Input;
 
 namespace Complete
 {
@@ -22,16 +23,12 @@ namespace Complete
 
         [Header("Game References")]
         [SerializeField] private GameManager _gameManager;
-        [SerializeField] private GameObject _networkTankPrefab;
 
         // MagicOnionのクライアント
         private ITankGameHub _client;
         private GrpcChannelx _channel;
         private int _myPlayerId = -1;
-        private Dictionary<int, GameObject> _remoteTanks = new Dictionary<int, GameObject>();
-        
-        // リモートタンクのTransformキャッシュ
-        private Dictionary<int, Transform> _remoteTankTransforms = new Dictionary<int, Transform>();
+        private Dictionary<int, RemoteInputProvider> _remoteInputProviders = new Dictionary<int, RemoteInputProvider>();
         private CancellationTokenSource _cts = new CancellationTokenSource();
 
         public bool IsNetworkMode => _useNetworkMode;
@@ -73,6 +70,17 @@ namespace Complete
                 await _client.JoinAsync(playerName);
                 
                 Debug.Log("サーバーに接続しました");
+                
+                // 接続が完了したらGameManagerを初期化
+                if (_gameManager != null)
+                {
+                    Debug.Log("ネットワーク接続完了 - GameManagerを初期化します");
+                    _gameManager.InitializeGame();
+                }
+                else
+                {
+                    Debug.LogError("GameManagerが見つかりません");
+                }
                 
                 // 位置情報の定期送信を開始
                 StartSendingPositionAsync().Forget();
@@ -117,24 +125,21 @@ namespace Complete
                 try
                 {
                     // 自分のタンクの位置情報を取得
-                    if (_myPlayerId > 0 && _gameManager.m_Tanks.Length >= _myPlayerId)
+                    var myTank = _gameManager.GetTankManager(_myPlayerId);
+                    if (myTank != null && myTank.m_Instance != null)
                     {
-                        var tank = _gameManager.m_Tanks[_myPlayerId - 1];
-                        if (tank != null && tank.m_Instance != null)
-                        {
-                            var position = tank.m_Instance.transform.position;
-                            var rotation = tank.m_Instance.transform.rotation;
+                        var position = myTank.m_Instance.transform.position;
+                        var rotation = myTank.m_Instance.transform.rotation;
 
-                            // 位置情報を送信
-                            await _client.UpdatePositionAsync(new TankPositionData
-                            {
-                                PlayerID = _myPlayerId,
-                                PositionX = position.x,
-                                PositionY = position.y,
-                                PositionZ = position.z,
-                                RotationY = rotation.eulerAngles.y
-                            });
-                        }
+                        // 位置情報を送信
+                        await _client.UpdatePositionAsync(new TankPositionData
+                        {
+                            PlayerID = _myPlayerId,
+                            PositionX = position.x,
+                            PositionY = position.y,
+                            PositionZ = position.z,
+                            RotationY = rotation.eulerAngles.y
+                        });
                     }
                 }
                 catch (Exception ex)
@@ -150,41 +155,32 @@ namespace Complete
         /// <summary>
         /// リモートプレイヤーのタンクを生成
         /// </summary>
-        private void SpawnRemoteTank(int playerId)
+        private void SpawnRemoteTank(int playerId, string playerName)
         {
-            if (_remoteTanks.ContainsKey(playerId))
-                return;
-
-            // リモートタンクのスポーン位置
-            Vector3 spawnPosition = new Vector3(0, 0, 0);
-            Quaternion spawnRotation = Quaternion.identity;
-
-            // プレイヤーIDに基づいてスポーン位置を調整
-            if (playerId == 1)
+            if (_remoteInputProviders.ContainsKey(playerId))
             {
-                spawnPosition = new Vector3(-10, 0, 0);
+                Debug.Log($"PlayerId={playerId}のリモートタンクは既に存在します");
+                return;
+            }
+
+            Debug.Log($"リモートプレイヤーのタンクを生成開始: PlayerId={playerId}, Name={playerName}");
+
+            // GameManagerにリモートプレイヤーのタンクを追加
+            _gameManager.AddRemotePlayerTank(playerId, playerName);
+
+            // RemoteInputProviderを取得して管理
+            var remoteInputProvider = _gameManager.GetRemoteInputProvider(playerId);
+            if (remoteInputProvider != null)
+            {
+                _remoteInputProviders[playerId] = remoteInputProvider;
+                Debug.Log($"RemoteInputProviderを登録しました: PlayerId={playerId}");
             }
             else
             {
-                spawnPosition = new Vector3(10, 0, 0);
+                Debug.LogWarning($"RemoteInputProviderが見つかりません: PlayerId={playerId}");
             }
 
-            // リモートタンクを生成
-            GameObject remoteTank = Instantiate(_networkTankPrefab, spawnPosition, spawnRotation);
-            remoteTank.name = $"RemoteTank_{playerId}";
-            
-            // リモートタンクの移動と発射コンポーネントを無効化（サーバーからの位置情報で動かす）
-            var movement = remoteTank.GetComponent<TankMovement>();
-            var shooting = remoteTank.GetComponent<TankShooting>();
-            
-            if (movement != null) movement.enabled = false;
-            if (shooting != null) shooting.enabled = false;
-
-            // リモートタンクを管理対象に追加
-            _remoteTanks[playerId] = remoteTank;
-            _remoteTankTransforms[playerId] = remoteTank.transform;
-
-            Debug.Log($"リモートタンクを生成しました: PlayerId={playerId}");
+            Debug.Log($"リモートプレイヤーのタンクを生成完了: PlayerId={playerId}, Name={playerName}");
         }
 
         /// <summary>
@@ -205,83 +201,167 @@ namespace Complete
             }
         }
 
+
         #region ITankGameHubReceiver の実装
         public void OnJoin(int playerID, string playerName)
         {
             Debug.Log($"プレイヤーが参加しました: ID={playerID}, Name={playerName}");
             
+            // PlayerIDを2人対戦用に正規化（サーバー側が修正されていない場合の保護）
+            int normalizedPlayerID = NormalizePlayerID(playerID);
+            if (normalizedPlayerID != playerID)
+            {
+                Debug.LogWarning($"PlayerID {playerID}を{normalizedPlayerID}に正規化しました");
+            }
+            
             // 自分のプレイヤーIDを設定
             if (_myPlayerId < 0)
             {
-                _myPlayerId = playerID;
+                _myPlayerId = normalizedPlayerID;
                 Debug.Log($"自分のプレイヤーID: {_myPlayerId}");
+                
+                // 自分のローカルタンクをPlayerIDベースで生成
+                if (_gameManager != null)
+                {
+                    _gameManager.SpawnLocalPlayerTankWithID(normalizedPlayerID);
+                    Debug.Log($"PlayerID {normalizedPlayerID}で自分のローカルタンクを生成しました");
+                }
             }
-            else if (playerID != _myPlayerId)
+            else if (normalizedPlayerID != _myPlayerId)
             {
                 // 他のプレイヤーのタンクを生成
-                SpawnRemoteTank(playerID);
+                SpawnRemoteTank(normalizedPlayerID, playerName);
             }
+            else
+            {
+                // 自分の情報の重複受信（既存プレイヤー情報の同期）
+                Debug.Log($"自分の情報を再受信: ID={normalizedPlayerID}");
+            }
+        }
+
+        /// <summary>
+        /// PlayerIDを2人対戦用に正規化（1-2の範囲）
+        /// </summary>
+        private int NormalizePlayerID(int playerID)
+        {
+            // 既に正しい範囲の場合はそのまま返す
+            if (playerID >= 1 && playerID <= 2)
+            {
+                return playerID;
+            }
+            
+            // 自分のプレイヤーIDが未設定の場合は1を割り当て
+            if (_myPlayerId < 0)
+            {
+                return 1;
+            }
+            
+            // 既に自分のPlayerIDが1の場合は2を割り当て、そうでなければ1を割り当て
+            return _myPlayerId == 1 ? 2 : 1;
         }
 
         public void OnLeave(int playerID)
         {
             Debug.Log($"プレイヤーが退出しました: ID={playerID}");
             
-            // リモートタンクを削除
-            if (_remoteTanks.TryGetValue(playerID, out GameObject remoteTank))
+            // RemoteInputProviderを削除
+            if (_remoteInputProviders.TryGetValue(playerID, out RemoteInputProvider provider))
             {
-                Destroy(remoteTank);
-                _remoteTanks.Remove(playerID);
-                _remoteTankTransforms.Remove(playerID);
+                provider.Dispose();
+                _remoteInputProviders.Remove(playerID);
             }
+            
+            // GameManagerのタンクも削除が必要（別途実装予定）
+            // TODO: GameManagerにRemoveRemoteTankメソッドを追加
         }
 
         public void OnGameStart()
         {
-            Debug.Log("ゲームが開始されました");
+            Debug.Log("サーバーからゲーム開始通知を受信しました");
+            
+            // GameManagerにゲーム開始を通知
+            if (_gameManager != null)
+            {
+                // GameManagerが初期化されていない場合は初期化
+                if (!_gameManager.IsInitialized)
+                {
+                    Debug.Log("GameManagerが未初期化のため、先に初期化します");
+                    _gameManager.InitializeGame();
+                }
+                
+                Debug.Log("ゲームを開始します");
+                _gameManager.StartGame();
+            }
+            else
+            {
+                Debug.LogError("GameManagerが見つかりません");
+            }
         }
 
         public void OnUpdatePosition(TankPositionData positionData)
         {
+            // PlayerIDを正規化
+            int normalizedPlayerID = NormalizePlayerID(positionData.PlayerID);
+            
             // 自分のタンクの位置情報は無視
-            if (positionData.PlayerID == _myPlayerId)
+            if (normalizedPlayerID == _myPlayerId)
                 return;
 
-            // リモートタンクの位置情報を更新
-            if (_remoteTankTransforms.TryGetValue(positionData.PlayerID, out Transform transform))
+            // RemoteInputProviderに入力データを設定（位置情報から入力を逆算）
+            // 注意: この実装は暫定的で、実際にはサーバーから入力情報を直接受信すべき
+            if (_remoteInputProviders.TryGetValue(normalizedPlayerID, out RemoteInputProvider provider))
             {
-                // 位置を更新
-                transform.position = new Vector3(
-                    positionData.PositionX,
-                    positionData.PositionY,
-                    positionData.PositionZ
-                );
+                // TODO: 位置情報から移動・回転入力を逆算して設定する
+                // 現在は位置の直接更新を行う（暫定的な実装）
                 
-                // 回転を更新
-                transform.rotation = Quaternion.Euler(0, positionData.RotationY, 0);
+                // GameManagerからリモートタンクのTransformを取得して直接更新
+                var tankManager = _gameManager.GetTankManager(normalizedPlayerID);
+                if (tankManager?.m_Instance != null)
+                {
+                    var transform = tankManager.m_Instance.transform;
+                    transform.position = new Vector3(
+                        positionData.PositionX,
+                        positionData.PositionY,
+                        positionData.PositionZ
+                    );
+                    transform.rotation = Quaternion.Euler(0, positionData.RotationY, 0);
+                }
             }
             else
             {
                 // リモートタンクがまだ生成されていない場合は生成
-                SpawnRemoteTank(positionData.PlayerID);
+                SpawnRemoteTank(normalizedPlayerID, $"Remote_{normalizedPlayerID}");
             }
         }
 
         public void OnFire(int playerID)
         {
+            // PlayerIDを正規化
+            int normalizedPlayerID = NormalizePlayerID(playerID);
+            
             // 自分の発射は無視
-            if (playerID == _myPlayerId)
+            if (normalizedPlayerID == _myPlayerId)
                 return;
 
-            // リモートタンクの発射処理
-            if (_remoteTanks.TryGetValue(playerID, out GameObject remoteTank))
+            // RemoteInputProviderに発射コマンドを設定
+            if (_remoteInputProviders.TryGetValue(normalizedPlayerID, out RemoteInputProvider provider))
             {
-                var shooting = remoteTank.GetComponent<TankShooting>();
-                if (shooting != null)
-                {
-                    shooting.Fire();
-                }
+                // FireButtonを一瞬だけtrueにして発射をトリガー
+                provider.SetInput(0, 0, true);
+                
+                // 少し後にfalseに戻す（UniTaskで非同期実行）
+                ResetFireButtonAsync(provider).Forget();
             }
+        }
+
+
+        /// <summary>
+        /// 発射ボタンを一瞬後にリセットする
+        /// </summary>
+        private async UniTaskVoid ResetFireButtonAsync(RemoteInputProvider provider)
+        {
+            await UniTask.Delay(100); // 100ms後
+            provider.SetInput(0, 0, false);
         }
         #endregion
     }

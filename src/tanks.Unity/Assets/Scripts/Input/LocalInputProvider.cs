@@ -26,9 +26,12 @@ namespace Complete.Input
 
         public LocalInputProvider(int playerNumber)
         {
-            _movementAxisName = "Vertical" + playerNumber;
-            _turnAxisName = "Horizontal" + playerNumber;
-            _fireButtonName = "Fire" + playerNumber;
+            // PlayerIDを適切な入力番号にマッピング（1-4の範囲）
+            int inputNumber = Mathf.Clamp(playerNumber, 1, 4);
+            
+            _movementAxisName = "Vertical" + inputNumber;
+            _turnAxisName = "Horizontal" + inputNumber;
+            _fireButtonName = "Fire" + inputNumber;
 
             // MonoBehaviourに依存しないUpdateループ
             _updateSubscription = Observable.EveryUpdate()

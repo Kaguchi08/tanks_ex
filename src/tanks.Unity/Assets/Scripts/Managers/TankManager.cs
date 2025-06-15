@@ -27,6 +27,7 @@ namespace Complete
         [HideInInspector] public string m_ColoredPlayerText;
         [HideInInspector] public GameObject m_Instance;
         [HideInInspector] public int m_Wins;
+        [HideInInspector] public int m_PlayerID; // ネットワーク用のプレイヤーID
 
         public IInputProvider InputProvider { get; private set; }
 
@@ -47,6 +48,7 @@ namespace Complete
             m_Instance = tankInstance;
             InputProvider = inputProvider;
             m_PlayerName = playerName;
+            m_PlayerID = playerNumber;
             
             // コンポーネントを取得
             m_Movement = m_Instance.GetComponent<TankMovement>();

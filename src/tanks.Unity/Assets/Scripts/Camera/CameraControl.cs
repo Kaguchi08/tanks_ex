@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using Complete.Input;
 
 namespace Complete
 {
@@ -52,7 +53,7 @@ namespace Complete
         {
             if (m_IsTpsActive && m_UseTpsCamera && m_Targets.Length > 0)
             {
-                // TPS視点の場合、プレイヤー1を追従
+                // TPS視点の場合、自分のタンクを追従
                 MoveTps();
             }
             else
@@ -76,17 +77,17 @@ namespace Complete
                 m_Camera.orthographic = false;
                 m_Camera.fieldOfView = m_TpsFieldOfView;
                 // TPS起動時に即座に位置と回転を設定
-                if (m_Targets != null && m_Targets.Length > 0 && m_Targets[0] != null)
+                Transform myTank = GetMyTank();
+                if (myTank != null)
                 {
-                    Transform targetTank = m_Targets[0];
-                    m_LastTargetForward = targetTank.forward;
-                    transform.position = targetTank.position 
+                    m_LastTargetForward = myTank.forward;
+                    transform.position = myTank.position 
                         - m_LastTargetForward * m_TpsDistance // タンクの後ろ（安定した向きを使用）
                         + Vector3.up * m_TpsHeight // 高さオフセット
                         + Vector3.Cross(Vector3.up, m_LastTargetForward).normalized * m_TpsOffsetX; // 安定した横オフセット
                     m_TpsVelocity = Vector3.zero;
                     // プレイヤーを注視する
-                    Vector3 lookDir = targetTank.position - transform.position;
+                    Vector3 lookDir = myTank.position - transform.position;
                     if (lookDir != Vector3.zero)
                     {
                         transform.rotation = Quaternion.LookRotation(lookDir);
@@ -95,7 +96,7 @@ namespace Complete
                     // 障害物透明化の設定
                     if (m_ObstacleHandler != null && m_UseObstacleTransparency)
                     {
-                        m_ObstacleHandler.SetTarget(targetTank, true);
+                        m_ObstacleHandler.SetTarget(myTank, true);
                     }
                 }
             }
@@ -117,19 +118,18 @@ namespace Complete
         // TPSカメラの移動処理
         private void MoveTps()
         {
-            if (m_Targets == null || m_Targets.Length == 0 || m_Targets[0] == null)
+            Transform myTank = GetMyTank();
+            if (myTank == null)
                 return;
-
-            Transform targetTank = m_Targets[0];
             
             // プレイヤーの向きが大きく変わった場合のみ更新（安定性向上）
-            if (Vector3.Angle(targetTank.forward, m_LastTargetForward) > 5f)
+            if (Vector3.Angle(myTank.forward, m_LastTargetForward) > 5f)
             {
-                m_LastTargetForward = targetTank.forward;
+                m_LastTargetForward = myTank.forward;
             }
             
             // プレイヤーの向きに合わせて後ろに配置
-            m_TpsDesiredPosition = targetTank.position 
+            m_TpsDesiredPosition = myTank.position 
                 - m_LastTargetForward * m_TpsDistance // タンクの後ろ（安定した向きを使用）
                 + Vector3.up * m_TpsHeight // 高さオフセット
                 + Vector3.Cross(Vector3.up, m_LastTargetForward).normalized * m_TpsOffsetX; // 安定した横オフセット
@@ -137,12 +137,39 @@ namespace Complete
             transform.position = Vector3.SmoothDamp(transform.position, m_TpsDesiredPosition, ref m_TpsVelocity, m_TpsDampTime);
             
             // プレイヤーを注視する
-            Vector3 lookDirection = targetTank.position - transform.position;
+            Vector3 lookDirection = myTank.position - transform.position;
             if (lookDirection != Vector3.zero)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(lookDirection);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, m_TpsDampTime * 5f);
             }
+        }
+
+        /// <summary>
+        /// 自分のタンクのTransformを取得
+        /// </summary>
+        private Transform GetMyTank()
+        {
+            if (m_Targets == null || m_Targets.Length == 0)
+                return null;
+
+            // GameManagerを探してネットワークモードかどうか確認
+            var gameManager = FindObjectOfType<GameManager>();
+            if (gameManager != null && gameManager.m_UseNetworkMode)
+            {
+                // ネットワークモードの場合、LocalInputProviderを持つタンクを探す
+                for (int i = 0; i < gameManager.m_Tanks.Length; i++)
+                {
+                    var tank = gameManager.m_Tanks[i];
+                    if (tank.m_Instance != null && tank.InputProvider is LocalInputProvider)
+                    {
+                        return tank.m_Instance.transform;
+                    }
+                }
+            }
+            
+            // ローカルモードまたは見つからない場合は最初のターゲットを返す
+            return m_Targets.Length > 0 ? m_Targets[0] : null;
         }
 
 
