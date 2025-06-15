@@ -346,7 +346,7 @@ namespace Complete
                 {
                     // 発射イベントをUniRxで購読し、ネットワーク通知を行う
                     shooting.OnFiredObservable
-                        .Subscribe(_ => m_NetworkManager.FireAsync())
+                        .Subscribe(_ => m_NetworkManager.FireAsync().Forget())
                         .AddTo(this);
                 }
             }

@@ -11,8 +11,6 @@ namespace Complete
     /// </summary>
     public class TankMovement : MonoBehaviour
     {
-        [Header("Player Settings")]
-        public int m_PlayerNumber = 1;
 
         [Header("Movement Settings")]
         public float m_Speed = 12f;
@@ -112,10 +110,6 @@ namespace Complete
             // GameManagerがSetupを呼び出すので、ここでは何もしない
         }
 
-        private void Update()
-        {
-            // Update は UniRx に置き換え済み
-        }
 
         private void Move(float movementInput)
         {
@@ -130,10 +124,6 @@ namespace Complete
             m_Rigidbody.MoveRotation(m_Rigidbody.rotation * turnRotation);
         }
 
-        private void UpdateEngineAudio()
-        {
-            // UniRxのストリーム処理に置き換え
-        }
 
         private void PlayEngineClip(AudioClip clip)
         {

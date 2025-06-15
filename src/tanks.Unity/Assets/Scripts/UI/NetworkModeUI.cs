@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UniRx;
 using UniRx.Triggers;
+using Cysharp.Threading.Tasks;
 
 namespace Complete
 {
@@ -36,24 +37,30 @@ namespace Complete
                 .Subscribe(isOn => OnNetworkModeToggleChanged(isOn))
                 .AddTo(this);
             _connectButton.OnClickAsObservable()
-                .Subscribe(_ => { OnConnectButtonClicked(); UpdateUI(); })
+                .Subscribe(_ => OnConnectButtonClickedAsync())
                 .AddTo(this);
             _disconnectButton.OnClickAsObservable()
-                .Subscribe(_ => { OnDisconnectButtonClicked(); UpdateUI(); })
+                .Subscribe(_ => OnDisconnectButtonClickedAsync())
+                .AddTo(this);
+
+            // 接続状態の変更を監視してUIを更新
+            Observable.EveryUpdate()
+                .Select(_ => (_networkManager.IsConnected, _networkManager.IsNetworkMode))
+                .DistinctUntilChanged()
+                .Subscribe(state => UpdateConnectionStatus(state.IsConnected, state.IsNetworkMode))
                 .AddTo(this);
         }
 
-        private void Update()
+        private void UpdateConnectionStatus(bool isConnected, bool isNetworkMode)
         {
-            // 接続状態を更新
             if (_statusText != null)
             {
-                if (_networkManager.IsConnected)
+                if (isConnected)
                 {
                     _statusText.text = "接続状態: 接続済み";
                     _statusText.color = Color.green;
                 }
-                else if (_networkManager.IsNetworkMode)
+                else if (isNetworkMode)
                 {
                     _statusText.text = "接続状態: 未接続";
                     _statusText.color = Color.yellow;
@@ -64,13 +71,17 @@ namespace Complete
                     _statusText.color = Color.white;
                 }
             }
+            
+            // ボタンの有効/無効状態を更新
+            if (_connectButton != null)
+                _connectButton.interactable = isNetworkMode && !isConnected;
+            if (_disconnectButton != null)
+                _disconnectButton.interactable = isConnected;
         }
 
         private void UpdateUI()
         {
-            // ボタンの有効/無効状態を更新
-            _connectButton.interactable = _networkManager.IsNetworkMode && !_networkManager.IsConnected;
-            _disconnectButton.interactable = _networkManager.IsConnected;
+            UpdateConnectionStatus(_networkManager.IsConnected, _networkManager.IsNetworkMode);
         }
 
         private void OnNetworkModeToggleChanged(bool isOn)
@@ -86,18 +97,28 @@ namespace Complete
             UpdateUI();
         }
 
-        private void OnConnectButtonClicked()
+        private async UniTaskVoid OnConnectButtonClickedAsync()
         {
-            // サーバーに接続
-            _networkManager.ConnectAsync().Forget();
-            UpdateUI();
+            try
+            {
+                await _networkManager.ConnectAsync();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"接続エラー: {ex.Message}");
+            }
         }
 
-        private void OnDisconnectButtonClicked()
+        private async UniTaskVoid OnDisconnectButtonClickedAsync()
         {
-            // サーバーから切断
-            _networkManager.DisconnectAsync().Forget();
-            UpdateUI();
+            try
+            {
+                await _networkManager.DisconnectAsync();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"切断エラー: {ex.Message}");
+            }
         }
     }
 } 

@@ -15,8 +15,6 @@ namespace Complete
         // 発射時のイベント (UniRx)
         readonly Subject<Unit> _onFiredSubject = new Subject<Unit>();
         public IObservable<Unit> OnFiredObservable => _onFiredSubject;
-        [Header("Player Settings")]
-        public int m_PlayerNumber = 1;
 
         [Header("Shooting Settings")]
         public Rigidbody m_Shell;
@@ -34,7 +32,7 @@ namespace Complete
         public AudioClip m_FireClip;
 
         private IInputProvider _inputProvider;
-        private float m_CurrentLaunchForce;
+        private ReactiveProperty<float> m_CurrentLaunchForce = new ReactiveProperty<float>();
         private float m_ChargeSpeed;
         private bool m_Fired;
         private CompositeDisposable _disposables;
@@ -52,10 +50,21 @@ namespace Complete
 
         private void OnEnable()
         {
-            m_CurrentLaunchForce = m_MinLaunchForce;
+            m_CurrentLaunchForce.Value = m_MinLaunchForce;
             m_AimSlider.value = m_MinLaunchForce;
 
             _disposables = new CompositeDisposable();
+
+            // スライダーの値をReactivePropertyで自動更新
+            m_CurrentLaunchForce
+                .Subscribe(force => m_AimSlider.value = force)
+                .AddTo(_disposables);
+
+            // 最大チャージ時の自動発射
+            m_CurrentLaunchForce
+                .Where(force => force >= m_MaxLaunchForce && !m_Fired)
+                .Subscribe(_ => Fire())
+                .AddTo(_disposables);
 
             if (_inputProvider != null)
             {
@@ -106,23 +115,11 @@ namespace Complete
         {
             // GameManagerがSetupを呼び出すので、ここでは何もしない
         }
-        
-        private void Update()
-        {
-            // スライダーの値を更新
-            m_AimSlider.value = m_CurrentLaunchForce;
-
-            // チャージが最大に達し、まだ発射していない場合は自動で発射
-            if (m_CurrentLaunchForce >= m_MaxLaunchForce && !m_Fired)
-            {
-                Fire();
-            }
-        }
 
         private void StartCharging()
         {
             m_Fired = false;
-            m_CurrentLaunchForce = m_MinLaunchForce;
+            m_CurrentLaunchForce.Value = m_MinLaunchForce;
 
             // チャージ音を再生
             m_ShootingAudio.clip = m_ChargingClip;
@@ -132,7 +129,7 @@ namespace Complete
         private void ContinueCharging()
         {
             // 発射力を増加させる
-            m_CurrentLaunchForce += m_ChargeSpeed * Time.deltaTime;
+            m_CurrentLaunchForce.Value += m_ChargeSpeed * Time.deltaTime;
         }
 
         public void Fire()
@@ -143,14 +140,14 @@ namespace Complete
             Rigidbody shellInstance = Instantiate(m_Shell, m_FireTransform.position, m_FireTransform.rotation) as Rigidbody;
 
             // シェルに速度を設定
-            shellInstance.velocity = m_CurrentLaunchForce * m_FireTransform.forward;
+            shellInstance.velocity = m_CurrentLaunchForce.Value * m_FireTransform.forward;
 
             // 発射音を再生
             m_ShootingAudio.clip = m_FireClip;
             m_ShootingAudio.Play();
 
             // 発射力をリセット
-            m_CurrentLaunchForce = m_MinLaunchForce;
+            m_CurrentLaunchForce.Value = m_MinLaunchForce;
             
             // 発射イベントを通知
             _onFiredSubject.OnNext(Unit.Default);

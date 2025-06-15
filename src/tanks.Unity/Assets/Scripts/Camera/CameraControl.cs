@@ -1,284 +1,273 @@
 ﻿using UnityEngine;
-using Complete.Input;
+using Complete.Input; // 2つ目のファイルで追加された名前空間
 
 namespace Complete
 {
+    /// <summary>
+    /// カメラ制御
+    /// - 俯瞰視点 (RTS)
+    /// - TPS視点（プレイヤー追従）
+    /// </summary>
     public class CameraControl : MonoBehaviour
     {
-        public float m_DampTime = 0.2f;                 // Approximate time for the camera to refocus.
-        public float m_ScreenEdgeBuffer = 4f;           // Space between the top/bottom most target and the screen edge.
-        public float m_MinSize = 6.5f;                  // The smallest orthographic size the camera can be.
-        [HideInInspector] public Transform[] m_Targets; // All the targets the camera needs to encompass.
+        #region 一般設定 --------------------------------------------------
+        public float m_DampTime = 0.2f;            // カメラが目標位置へ追従するおおよその時間
+        public float m_ScreenEdgeBuffer = 4f;      // 画面端と一番端のターゲットとのバッファ
+        public float m_MinSize = 6.5f;             // カメラの最小オーソサイズ
+        [HideInInspector] public Transform[] m_Targets; // 追従対象のトランスフォーム配列
+        #endregion
 
+        #region TPS カメラ設定 -------------------------------------------
         [Header("TPS Camera Settings")]
-        public bool m_UseTpsCamera = true;              // TPSカメラを使用するかどうか
-        public float m_TpsHeight = 1.0f;                // TPSカメラの高さ
-        public float m_TpsDistance = 4.0f;              // TPSカメラのプレイヤーからの距離
-        public float m_TpsDampTime = 0.05f;              // TPSカメラの遷移時間
-        public float m_TpsFieldOfView = 10f;            // TPSカメラの視野角
-        public float m_TpsOffsetX = 0f;                 // TPSカメラの横オフセット（負の値で左、正の値で右）
-        
+        public bool m_UseTpsCamera = true;   // TPS カメラを使用するか
+        public float m_TpsHeight = 5.0f;   // 高さオフセット
+        public float m_TpsDistance = 5.0f;   // 後方距離
+        public float m_TpsDampTime = 0.05f;  // TPS 追従ダンパー
+        public float m_TpsFieldOfView = 10f;    // TPS FOV
+        public float m_TpsLookAheadDistance = 50.0f;  // プレイヤー前方を注視させる距離
+
+        #endregion
+
+        #region クリッピングプレーン設定（TPS のみ有効）---------------
+        [Header("Clipping Planes Settings")]
+        public float m_NearClipPlane = 40f;          // Near 面
+        public float m_FarClipPlane = 1000f;        // Far 面
+        public bool m_ApplyClippingPlanesInRealtime = true; // 実行時に値変更を反映するか
+        #endregion
+
+        #region 障害物透明化設定 ----------------------------------------
         [Header("Obstacle Transparency")]
-        public bool m_UseObstacleTransparency = true;   // 障害物の透明化を使用するかどうか
+        public bool m_UseObstacleTransparency = true; // プレイヤーとカメラの間の障害物を透明化するか
+        #endregion
 
-        private Camera m_Camera;                        // Used for referencing the camera.
-        private float m_ZoomSpeed;                      // Reference speed for the smooth damping of the orthographic size.
-        private Vector3 m_MoveVelocity;                 // Reference velocity for the smooth damping of the position.
-        private Vector3 m_DesiredPosition;              // The position the camera is moving towards.
-        
-        private bool m_IsTpsActive = false;             // TPSカメラが有効かどうか
-        private Vector3 m_TpsVelocity;                  // TPSカメラの移動速度参照
-        private Vector3 m_TpsDesiredPosition;           // TPSカメラの目標位置
-        private Quaternion m_OriginalRotation;          // 元の回転を保持
-        private float m_OriginalFieldOfView;            // 元の視野角を保持
-        private Vector3 m_LastTargetForward = Vector3.forward; // 前回のプレイヤーの向き
-        private CameraObstacleHandler m_ObstacleHandler; // 障害物透明化ハンドラー
+        #region 内部変数 -------------------------------------------------
+        private Camera m_Camera;               // 実カメラ
+        private float m_ZoomSpeed;            // オーソサイズの SmoothDamp 用速度
+        private Vector3 m_MoveVelocity;         // 位置の SmoothDamp 用速度
+        private Vector3 m_DesiredPosition;      // RTS での目標位置
 
-        private void Awake ()
+        private bool m_IsTpsActive = false;  // TPS かどうか
+        private Vector3 m_TpsVelocity;          // TPS 位置用 SmoothDamp 速度
+        private Vector3 m_TpsDesiredPosition;   // TPS 目標位置
+        private Quaternion m_OriginalRotation;  // RTS 時の元の回転
+        private float m_OriginalFieldOfView; // RTS 時の元の FOV
+        private Vector3 m_LastTargetForward = Vector3.forward; // 前回ターゲットの forward（急回転ノイズ抑制）
+        private CameraObstacleHandler m_ObstacleHandler; // 障害物透明化ハンドラ
+        #endregion
+
+        #region Unity コールバック --------------------------------------
+        private void Awake()
         {
             m_Camera = GetComponentInChildren<Camera>();
             m_OriginalRotation = transform.rotation;
             m_OriginalFieldOfView = m_Camera.fieldOfView;
-            
-            // 障害物透明化ハンドラーの取得またはコンポーネントの追加
+
+            // 障害物透明化ハンドラを取得／追加
             m_ObstacleHandler = GetComponent<CameraObstacleHandler>();
             if (m_ObstacleHandler == null && m_UseObstacleTransparency)
-            {
                 m_ObstacleHandler = gameObject.AddComponent<CameraObstacleHandler>();
-            }
         }
 
-
-        private void FixedUpdate ()
+        private void FixedUpdate()
         {
             if (m_IsTpsActive && m_UseTpsCamera && m_Targets.Length > 0)
             {
-                // TPS視点の場合、自分のタンクを追従
+                // TPS 視点
                 MoveTps();
             }
             else
             {
-                // 俯瞰視点の場合
-                // Move the camera towards a desired position.
+                // 俯瞰視点
                 Move();
-
-                // Change the size of the camera based.
                 Zoom();
             }
         }
 
-        // TPSカメラをアクティブにする
+        private void Update()
+        {
+            // 実行中に Near/Far を変更したい場合
+            if (m_ApplyClippingPlanesInRealtime && m_IsTpsActive)
+                ApplyClippingPlanes();
+        }
+        #endregion
+
+        #region 公開 API -------------------------------------------------
+        /// <summary>
+        /// TPS カメラの有効／無効を切り替える
+        /// </summary>
         public void ActivateTpsCamera(bool activate)
         {
             m_IsTpsActive = activate && m_UseTpsCamera;
-            
+
             if (m_IsTpsActive)
             {
+                // パースペクティブ設定
                 m_Camera.orthographic = false;
                 m_Camera.fieldOfView = m_TpsFieldOfView;
-                // TPS起動時に即座に位置と回転を設定
-                Transform myTank = GetMyTank();
-                if (myTank != null)
+                ApplyClippingPlanes();
+
+                Transform targetTank = GetMyTank();
+                if (targetTank != null)
                 {
-                    m_LastTargetForward = myTank.forward;
-                    transform.position = myTank.position 
-                        - m_LastTargetForward * m_TpsDistance // タンクの後ろ（安定した向きを使用）
-                        + Vector3.up * m_TpsHeight // 高さオフセット
-                        + Vector3.Cross(Vector3.up, m_LastTargetForward).normalized * m_TpsOffsetX; // 安定した横オフセット
+                    m_LastTargetForward = targetTank.forward;
+
+                    transform.position = targetTank.position
+                                         + m_LastTargetForward * m_TpsDistance
+                                         + Vector3.up * m_TpsHeight
+                                         + Vector3.Cross(Vector3.up, m_LastTargetForward).normalized;
+
                     m_TpsVelocity = Vector3.zero;
-                    // プレイヤーを注視する
-                    Vector3 lookDir = myTank.position - transform.position;
-                    if (lookDir != Vector3.zero)
-                    {
-                        transform.rotation = Quaternion.LookRotation(lookDir);
-                    }
-                    
-                    // 障害物透明化の設定
+
+                    // プレイヤー前方を注視
+                    Vector3 lookAtPos = targetTank.position + targetTank.forward * m_TpsLookAheadDistance;
+                    Vector3 dir = lookAtPos - transform.position;
+                    if (dir != Vector3.zero)
+                        transform.rotation = Quaternion.LookRotation(dir);
+
+                    // 障害物透明化有効化
                     if (m_ObstacleHandler != null && m_UseObstacleTransparency)
-                    {
-                        m_ObstacleHandler.SetTarget(myTank, true);
-                    }
+                        m_ObstacleHandler.SetTarget(targetTank, true);
                 }
             }
             else
             {
+                // 俯瞰視点に戻す
                 m_Camera.orthographic = true;
-                // 視野角を元に戻す
                 m_Camera.fieldOfView = m_OriginalFieldOfView;
                 SetStartPositionAndSize();
-                
-                // 障害物透明化を無効化
+
                 if (m_ObstacleHandler != null)
-                {
                     m_ObstacleHandler.SetTarget(null, false);
-                }
             }
         }
+        #endregion
 
-        // TPSカメラの移動処理
+        #region TPS 関連メソッド -----------------------------------------
         private void MoveTps()
         {
-            Transform myTank = GetMyTank();
-            if (myTank == null)
-                return;
-            
-            // プレイヤーの向きが大きく変わった場合のみ更新（安定性向上）
-            if (Vector3.Angle(myTank.forward, m_LastTargetForward) > 5f)
-            {
-                m_LastTargetForward = myTank.forward;
-            }
-            
-            // プレイヤーの向きに合わせて後ろに配置
-            m_TpsDesiredPosition = myTank.position 
-                - m_LastTargetForward * m_TpsDistance // タンクの後ろ（安定した向きを使用）
-                + Vector3.up * m_TpsHeight // 高さオフセット
-                + Vector3.Cross(Vector3.up, m_LastTargetForward).normalized * m_TpsOffsetX; // 安定した横オフセット
-            
+            Transform targetTank = GetMyTank();
+            if (targetTank == null) return;
+
+            // 大きく向きが変わったときのみ更新（ノイズ低減）
+            if (Vector3.Angle(targetTank.forward, m_LastTargetForward) > 5f)
+                m_LastTargetForward = targetTank.forward;
+
+            m_TpsDesiredPosition = targetTank.position
+                                   + m_LastTargetForward * m_TpsDistance
+                                   + Vector3.up * m_TpsHeight
+                                   + Vector3.Cross(Vector3.up, m_LastTargetForward).normalized;
+
             transform.position = Vector3.SmoothDamp(transform.position, m_TpsDesiredPosition, ref m_TpsVelocity, m_TpsDampTime);
-            
-            // プレイヤーを注視する
-            Vector3 lookDirection = myTank.position - transform.position;
-            if (lookDirection != Vector3.zero)
+
+            // プレイヤー前方を注視
+            Vector3 lookPos = targetTank.position + targetTank.forward * m_TpsLookAheadDistance;
+            Vector3 lookDir = lookPos - transform.position;
+            if (lookDir != Vector3.zero)
             {
-                Quaternion targetRotation = Quaternion.LookRotation(lookDirection);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, m_TpsDampTime * 5f);
+                Quaternion targetRot = Quaternion.LookRotation(lookDir);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, m_TpsDampTime * 5f);
             }
         }
 
         /// <summary>
-        /// 自分のタンクのTransformを取得
+        /// ネットワークモード対応で「自分のタンク」を取得（2つ目のファイルから追加）
         /// </summary>
         private Transform GetMyTank()
         {
             if (m_Targets == null || m_Targets.Length == 0)
                 return null;
 
-            // GameManagerを探してネットワークモードかどうか確認
-            var gameManager = FindObjectOfType<GameManager>();
-            if (gameManager != null && gameManager.m_UseNetworkMode)
+            // GameManager があればネットワークモード判定
+            GameManager gm = FindObjectOfType<GameManager>();
+            if (gm != null && gm.m_UseNetworkMode)
             {
-                // ネットワークモードの場合、LocalInputProviderを持つタンクを探す
-                for (int i = 0; i < gameManager.m_Tanks.Length; i++)
+                foreach (var tank in gm.m_Tanks)
                 {
-                    var tank = gameManager.m_Tanks[i];
                     if (tank.m_Instance != null && tank.InputProvider is LocalInputProvider)
-                    {
                         return tank.m_Instance.transform;
-                    }
                 }
             }
-            
-            // ローカルモードまたは見つからない場合は最初のターゲットを返す
-            return m_Targets.Length > 0 ? m_Targets[0] : null;
+
+            // 見つからなければ先頭ターゲット
+            return m_Targets[0];
         }
+        #endregion
 
-
-        private void Move ()
+        #region RTS 関連メソッド -----------------------------------------
+        private void Move()
         {
-            // Find the average position of the targets.
-            FindAveragePosition ();
-
-            // Smoothly transition to that position.
+            FindAveragePosition();
             transform.position = Vector3.SmoothDamp(transform.position, m_DesiredPosition, ref m_MoveVelocity, m_DampTime);
-            
-            // 俯瞰視点の場合、元の回転に戻す
+
+            // 俯瞰視点時は元の回転に戻す
             if (!m_IsTpsActive)
-            {
                 transform.rotation = m_OriginalRotation;
-            }
         }
 
-
-        private void FindAveragePosition ()
+        private void Zoom()
         {
-            Vector3 averagePos = new Vector3 ();
-            int numTargets = 0;
+            float size = FindRequiredSize();
+            m_Camera.orthographicSize = Mathf.SmoothDamp(m_Camera.orthographicSize, size, ref m_ZoomSpeed, m_DampTime);
+        }
 
-            // Go through all the targets and add their positions together.
-            for (int i = 0; i < m_Targets.Length; i++)
+        private void FindAveragePosition()
+        {
+            Vector3 avg = Vector3.zero;
+            int count = 0;
+            foreach (var t in m_Targets)
             {
-                // If the target isn't active, go on to the next one.
-                if (!m_Targets[i].gameObject.activeSelf)
-                    continue;
-
-                // Add to the average and increment the number of targets in the average.
-                averagePos += m_Targets[i].position;
-                numTargets++;
+                if (!t.gameObject.activeSelf) continue;
+                avg += t.position;
+                count++;
             }
-
-            // If there are targets divide the sum of the positions by the number of them to find the average.
-            if (numTargets > 0)
-                averagePos /= numTargets;
-
-            // Keep the same y value.
-            averagePos.y = transform.position.y;
-
-            // The desired position is the average position;
-            m_DesiredPosition = averagePos;
+            if (count > 0) avg /= count;
+            avg.y = transform.position.y; // 高さは固定
+            m_DesiredPosition = avg;
         }
 
-
-        private void Zoom ()
+        private float FindRequiredSize()
         {
-            // Find the required size based on the desired position and smoothly transition to that size.
-            float requiredSize = FindRequiredSize();
-            m_Camera.orthographicSize = Mathf.SmoothDamp (m_Camera.orthographicSize, requiredSize, ref m_ZoomSpeed, m_DampTime);
-        }
-
-
-        private float FindRequiredSize ()
-        {
-            // Find the position the camera rig is moving towards in its local space.
-            Vector3 desiredLocalPos = transform.InverseTransformPoint(m_DesiredPosition);
-
-            // Start the camera's size calculation at zero.
+            Vector3 desiredLocal = transform.InverseTransformPoint(m_DesiredPosition);
             float size = 0f;
-
-            // Go through all the targets...
-            for (int i = 0; i < m_Targets.Length; i++)
+            foreach (var t in m_Targets)
             {
-                // ... and if they aren't active continue on to the next target.
-                if (!m_Targets[i].gameObject.activeSelf)
-                    continue;
-
-                // Otherwise, find the position of the target in the camera's local space.
-                Vector3 targetLocalPos = transform.InverseTransformPoint(m_Targets[i].position);
-
-                // Find the position of the target from the desired position of the camera's local space.
-                Vector3 desiredPosToTarget = targetLocalPos - desiredLocalPos;
-
-                // Choose the largest out of the current size and the distance of the tank 'up' or 'down' from the camera.
-                size = Mathf.Max(size, Mathf.Abs(desiredPosToTarget.y));
-
-                // Choose the largest out of the current size and the calculated size based on the tank being to the left or right of the camera.
-                size = Mathf.Max(size, Mathf.Abs(desiredPosToTarget.x) / m_Camera.aspect);
+                if (!t.gameObject.activeSelf) continue;
+                Vector3 targetLocal = transform.InverseTransformPoint(t.position);
+                Vector3 diff = targetLocal - desiredLocal;
+                size = Mathf.Max(size, Mathf.Abs(diff.y));
+                size = Mathf.Max(size, Mathf.Abs(diff.x) / m_Camera.aspect);
             }
-
-            // Add the edge buffer to the size.
             size += m_ScreenEdgeBuffer;
-
-            // Make sure the camera's size isn't below the minimum.
-            size = Mathf.Max (size, m_MinSize);
-
+            size = Mathf.Max(size, m_MinSize);
             return size;
         }
 
-
-        public void SetStartPositionAndSize ()
+        /// <summary>
+        /// 俯瞰視点の初期化（開始時や TPS 解除時）
+        /// </summary>
+        public void SetStartPositionAndSize()
         {
-            // 俯瞰視点に戻す（元の回転を復元）
             m_IsTpsActive = false;
             m_Camera.orthographic = true;
             transform.rotation = m_OriginalRotation;
-            
-            // Find the desired position.
-            FindAveragePosition ();
 
-            // Set the camera's position to the desired position without damping.
+            ApplyClippingPlanes();
+
+            FindAveragePosition();
             transform.position = m_DesiredPosition;
-
-            // Find and set the required size of the camera.
-            m_Camera.orthographicSize = FindRequiredSize ();
+            m_Camera.orthographicSize = FindRequiredSize();
         }
+        #endregion
+
+        #region 補助メソッド ----------------------------------------------
+        private void ApplyClippingPlanes()
+        {
+            if (m_Camera != null && m_IsTpsActive)
+            {
+                m_Camera.nearClipPlane = m_NearClipPlane;
+                m_Camera.farClipPlane = m_FarClipPlane;
+            }
+        }
+        #endregion
     }
 }

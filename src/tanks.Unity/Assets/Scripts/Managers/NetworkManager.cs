@@ -8,6 +8,7 @@ using System.Threading;
 using Tanks.Shared;
 using UnityEngine;
 using Complete.Input;
+using Complete.Utility;
 
 namespace Complete
 {
@@ -45,15 +46,26 @@ namespace Complete
 
         private void OnDestroy()
         {
-            DisconnectAsync().Forget();
-            _cts?.Cancel();
-            _cts?.Dispose();
+            try
+            {
+                _cts?.Cancel();
+                DisconnectAsync().Forget();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"OnDestroy中のエラー: {ex.Message}");
+            }
+            finally
+            {
+                _cts?.Dispose();
+                _cts = null;
+            }
         }
 
         /// <summary>
         /// サーバーに接続する
         /// </summary>
-        public async UniTaskVoid ConnectAsync()
+        public async UniTask ConnectAsync()
         {
             try
             {
@@ -63,7 +75,7 @@ namespace Complete
                 _channel = GrpcChannelx.ForAddress($"http://{_serverAddress}:{_serverPort}");
                 
                 // StreamingHubクライアントを作成
-                _client = await StreamingHubClient.ConnectAsync<ITankGameHub, ITankGameHubReceiver>(_channel, this);
+                _client = await StreamingHubClient.ConnectAsync<ITankGameHub, ITankGameHubReceiver>(_channel, this, cancellationToken: _cts.Token);
                 
                 // サーバーに参加
                 string playerName = "Player_" + UnityEngine.Random.Range(1, 9999);
@@ -85,6 +97,10 @@ namespace Complete
                 // 位置情報の定期送信を開始
                 StartSendingPositionAsync().Forget();
             }
+            catch (System.OperationCanceledException)
+            {
+                Debug.Log("接続がキャンセルされました");
+            }
             catch (Exception ex)
             {
                 Debug.LogError($"接続エラー: {ex.Message}");
@@ -94,7 +110,7 @@ namespace Complete
         /// <summary>
         /// サーバーから切断する
         /// </summary>
-        public async UniTaskVoid DisconnectAsync()
+        public async UniTask DisconnectAsync()
         {
             if (_client != null)
             {
@@ -102,15 +118,26 @@ namespace Complete
                 {
                     await _client.LeaveAsync();
                     await _client.DisposeAsync();
-                    await _channel.ShutdownAsync();
                     
-                    _client = null;
-                    _channel = null;
+                    if (_channel != null)
+                    {
+                        await _channel.ShutdownAsync();
+                    }
+                    
                     Debug.Log("サーバーから切断しました");
+                }
+                catch (System.OperationCanceledException)
+                {
+                    Debug.Log("切断処理がキャンセルされました");
                 }
                 catch (Exception ex)
                 {
                     Debug.LogError($"切断エラー: {ex.Message}");
+                }
+                finally
+                {
+                    _client = null;
+                    _channel = null;
                 }
             }
         }
@@ -125,7 +152,7 @@ namespace Complete
                 try
                 {
                     // 自分のタンクの位置情報を取得
-                    var myTank = _gameManager.GetTankManager(_myPlayerId);
+                    var myTank = GameUtility.GetTankManagerByPlayerId(_gameManager.m_Tanks, _myPlayerId);
                     if (myTank != null && myTank.m_Instance != null)
                     {
                         var position = myTank.m_Instance.transform.position;
@@ -186,7 +213,7 @@ namespace Complete
         /// <summary>
         /// 発射処理
         /// </summary>
-        public async void FireAsync()
+        public async UniTaskVoid FireAsync()
         {
             if (_client != null && _myPlayerId > 0)
             {
@@ -208,7 +235,7 @@ namespace Complete
             Debug.Log($"プレイヤーが参加しました: ID={playerID}, Name={playerName}");
             
             // PlayerIDを2人対戦用に正規化（サーバー側が修正されていない場合の保護）
-            int normalizedPlayerID = NormalizePlayerID(playerID);
+            int normalizedPlayerID = NormalizePlayerIDForNetworking(playerID);
             if (normalizedPlayerID != playerID)
             {
                 Debug.LogWarning($"PlayerID {playerID}を{normalizedPlayerID}に正規化しました");
@@ -241,8 +268,9 @@ namespace Complete
 
         /// <summary>
         /// PlayerIDを2人対戦用に正規化（1-2の範囲）
+        /// ネットワーク通信で使用する特別な正規化ロジック
         /// </summary>
-        private int NormalizePlayerID(int playerID)
+        private int NormalizePlayerIDForNetworking(int playerID)
         {
             // 既に正しい範囲の場合はそのまま返す
             if (playerID >= 1 && playerID <= 2)
@@ -301,7 +329,7 @@ namespace Complete
         public void OnUpdatePosition(TankPositionData positionData)
         {
             // PlayerIDを正規化
-            int normalizedPlayerID = NormalizePlayerID(positionData.PlayerID);
+            int normalizedPlayerID = NormalizePlayerIDForNetworking(positionData.PlayerID);
             
             // 自分のタンクの位置情報は無視
             if (normalizedPlayerID == _myPlayerId)
@@ -315,7 +343,7 @@ namespace Complete
                 // 現在は位置の直接更新を行う（暫定的な実装）
                 
                 // GameManagerからリモートタンクのTransformを取得して直接更新
-                var tankManager = _gameManager.GetTankManager(normalizedPlayerID);
+                var tankManager = GameUtility.GetTankManagerByPlayerId(_gameManager.m_Tanks, normalizedPlayerID);
                 if (tankManager?.m_Instance != null)
                 {
                     var transform = tankManager.m_Instance.transform;
@@ -337,7 +365,7 @@ namespace Complete
         public void OnFire(int playerID)
         {
             // PlayerIDを正規化
-            int normalizedPlayerID = NormalizePlayerID(playerID);
+            int normalizedPlayerID = NormalizePlayerIDForNetworking(playerID);
             
             // 自分の発射は無視
             if (normalizedPlayerID == _myPlayerId)

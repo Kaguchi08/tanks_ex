@@ -58,6 +58,24 @@ namespace Complete
 
         private void OnDestroy()
         {
+            // CancellationTokenSource のキャンセルと破棄
+            try
+            {
+                m_CancellationTokenSource?.Cancel();
+            }
+            catch (System.Exception ex)
+            {
+                if (m_LogDebugInfo)
+                {
+                    Debug.LogError($"CancellationTokenSource キャンセル中のエラー: {ex.Message}");
+                }
+            }
+            finally
+            {
+                m_CancellationTokenSource?.Dispose();
+                m_CancellationTokenSource = null;
+            }
+
             RestoreAllMaterials();
             
             // 透明マテリアルのクリーンアップ
