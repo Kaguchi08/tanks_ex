@@ -1,180 +1,171 @@
-﻿using UnityEngine;
 using System.Collections;
-//using UnityEngine.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UniRx;
+using Complete.Interfaces;
+using Complete.GameStates;
+using Complete.Input;
+using Cysharp.Threading.Tasks;
+using System.Threading;
+using System;
 
-public class GameManager : MonoBehaviour
+namespace Complete
 {
-    public int m_NumRoundsToWin = 5;        
-    public float m_StartDelay = 3f;         
-    public float m_EndDelay = 3f;           
-    public CameraControl m_CameraControl;   
-    public Text m_MessageText;              
-    public GameObject m_TankPrefab;         
-    public TankManager[] m_Tanks;           
-
-
-    private int m_RoundNumber;              
-    private WaitForSeconds m_StartWait;     
-    private WaitForSeconds m_EndWait;       
-/*    private TankManager m_RoundWinner;
-    private TankManager m_GameWinner;       
-*/
-
-    private void Start()
+    /// <summary>
+    /// リファクタリングされたGameManager
+    /// SOLID原則に従って設計された状態管理システムを使用
+    /// </summary>
+    public class GameManager : MonoBehaviour
     {
-        m_StartWait = new WaitForSeconds(m_StartDelay);
-        m_EndWait = new WaitForSeconds(m_EndDelay);
+        [Header("Game Settings")]
+        public int m_NumRoundsToWin = 5;
+        public float m_StartDelay = 3f;
+        public float m_EndDelay = 3f;
+        public bool m_UseNetworkMode = false;
 
-        SpawnAllTanks();
-        SetCameraTargets();
+        [Header("References")]
+        public CameraControl m_CameraControl;
+        public Text m_MessageText;
+        public GameObject m_TankPrefab;
+        public TankManager[] m_Tanks;     // 既存のTankManagerを使用（ITankControllerインターフェース対応済み）
+        public NetworkManager m_NetworkManager;
 
-        StartCoroutine(GameLoop());
-    }
+        
+        private ITankController[] _tankControllers;
+        private int _roundNumber;
 
-
-    private void SpawnAllTanks()
-    {
-        for (int i = 0; i < m_Tanks.Length; i++)
+        private void Start()
         {
-            m_Tanks[i].m_Instance =
-                Instantiate(m_TankPrefab, m_Tanks[i].m_SpawnPoint.position, m_Tanks[i].m_SpawnPoint.rotation) as GameObject;
-            m_Tanks[i].m_PlayerNumber = i + 1;
-            m_Tanks[i].Setup();
-        }
-    }
+            // ネットワークモードの設定を反映
+            if (m_NetworkManager != null)
+            {
+                // NetworkManagerのネットワークモード設定を反映
+                m_UseNetworkMode = m_NetworkManager.IsNetworkMode;
+            }
 
+            // タンクを生成してセットアップ
+            SpawnAllTanks();
+            SetCameraTargets();
 
-    private void SetCameraTargets()
-    {
-        Transform[] targets = new Transform[m_Tanks.Length];
+            // タンクコントローラー配列を準備
+            _tankControllers = new ITankController[m_Tanks.Length];
+            for (int i = 0; i < m_Tanks.Length; i++)
+            {
+                _tankControllers[i] = m_Tanks[i];
+            }
 
-        for (int i = 0; i < targets.Length; i++)
-        {
-            targets[i] = m_Tanks[i].m_Instance.transform;
+            // ゲームループを非同期で開始
+            _ = GameLoopAsync(); // fire and forget
         }
 
-        m_CameraControl.m_Targets = targets;
-    }
 
-
-    private IEnumerator GameLoop()
-    {
-        yield return StartCoroutine(RoundStarting());
-        yield return StartCoroutine(RoundPlaying());
-        yield return StartCoroutine(RoundEnding());
-
-/*        if (m_GameWinner != null)
+        private void SpawnAllTanks()
         {
-            SceneManager.LoadScene(0);
-        }
-        else
-        {
-            StartCoroutine(GameLoop());
-        }
-*/    }
+            for (int i = 0; i < m_Tanks.Length; i++)
+            {
+                // タンクのインスタンスを作成
+                GameObject tankInstance = Instantiate(m_TankPrefab, m_Tanks[i].m_SpawnPoint.position, m_Tanks[i].m_SpawnPoint.rotation);
+                
+                // タンクの種類に応じたInputProviderと名前を設定
+                IInputProvider inputProvider;
+                string playerName;
+                int playerNumber = i + 1;
 
+                if (m_Tanks[i].m_TankType == TankType.AI)
+                {
+                    inputProvider = new AIInputProvider();
+                    playerName = "AI " + playerNumber;
+                }
+                else
+                {
+                    inputProvider = new LocalInputProvider(playerNumber);
+                    playerName = "PLAYER " + playerNumber;
+                }
 
-    private IEnumerator RoundStarting()
-    {
-        yield return m_StartWait;
-    }
-
-
-    private IEnumerator RoundPlaying()
-    {
-        yield return null;
-    }
-
-
-    private IEnumerator RoundEnding()
-    {
-        yield return m_EndWait;
-    }
-
-
-    private bool OneTankLeft()
-    {
-        int numTanksLeft = 0;
-
-        for (int i = 0; i < m_Tanks.Length; i++)
-        {
-            if (m_Tanks[i].m_Instance.activeSelf)
-                numTanksLeft++;
+                // タンクをセットアップ
+                m_Tanks[i].Setup(tankInstance, inputProvider, playerNumber, playerName);
+                
+                // ネットワークモードの場合、TankShootingにネットワーク通知機能を追加
+                if (m_UseNetworkMode && m_NetworkManager != null)
+                {
+                    var shooting = tankInstance.GetComponent<TankShooting>();
+                    if (shooting != null)
+                    {
+                        // 発射イベントをUniRxで購読し、ネットワーク通知を行う
+                        shooting.OnFiredObservable
+                            .Subscribe(_ => m_NetworkManager.FireAsync())
+                            .AddTo(this);
+                    }
+                }
+            }
         }
 
-        return numTanksLeft <= 1;
-    }
 
-/*
-    private TankManager GetRoundWinner()
-    {
-        for (int i = 0; i < m_Tanks.Length; i++)
+        private void SetCameraTargets()
         {
-            if (m_Tanks[i].m_Instance.activeSelf)
-                return m_Tanks[i];
+            Transform[] targets = new Transform[m_Tanks.Length];
+
+            for (int i = 0; i < targets.Length; i++)
+            {
+                targets[i] = m_Tanks[i].m_Instance.transform;
+            }
+
+            m_CameraControl.m_Targets = targets;
         }
 
-        return null;
-    }
 
-
-    private TankManager GetGameWinner()
-    {
-        for (int i = 0; i < m_Tanks.Length; i++)
+        /// <summary>
+        /// ゲームループ - 状態管理システムを使用
+        /// </summary>
+        private async UniTask GameLoopAsync()
         {
-            if (m_Tanks[i].m_Wins == m_NumRoundsToWin)
-                return m_Tanks[i];
+            CancellationToken token = this.GetCancellationTokenOnDestroy();
+
+            while (!token.IsCancellationRequested)
+            {
+                _roundNumber++;
+
+                // ラウンド開始状態
+                var roundStartingState = new RoundStartingState(m_StartDelay, m_MessageText, m_CameraControl, _tankControllers, _roundNumber);
+                await ExecuteStateAsync(roundStartingState, token);
+
+                // ラウンドプレイ状態
+                var roundPlayingState = new RoundPlayingState(m_MessageText, _tankControllers);
+                await ExecuteStateAsync(roundPlayingState, token);
+
+                // ラウンド終了状態
+                var roundEndingState = new RoundEndingState(m_EndDelay, m_MessageText, _tankControllers, m_NumRoundsToWin);
+                await ExecuteStateAsync(roundEndingState, token);
+
+                // ゲーム勝者がいる場合、シーンを再読み込み
+                if (roundEndingState.GameWinner != null)
+                {
+                    SceneManager.LoadScene(0);
+                    return;
+                }
+            }
         }
 
-        return null;
-    }
-
-
-    private string EndMessage()
-    {
-        string message = "DRAW!";
-
-        if (m_RoundWinner != null)
-            message = m_RoundWinner.m_ColoredPlayerText + " WINS THE ROUND!";
-
-        message += "\n\n\n\n";
-
-        for (int i = 0; i < m_Tanks.Length; i++)
+        /// <summary>
+        /// 状態を実行する
+        /// </summary>
+        private async UniTask ExecuteStateAsync(IGameState state, CancellationToken token)
         {
-            message += m_Tanks[i].m_ColoredPlayerText + ": " + m_Tanks[i].m_Wins + " WINS\n";
+            await state.EnterAsync(token);
+            state.Exit();
         }
 
-        if (m_GameWinner != null)
-            message = m_GameWinner.m_ColoredPlayerText + " WINS THE GAME!";
-
-        return message;
-    }
-*/
-
-    private void ResetAllTanks()
-    {
-        for (int i = 0; i < m_Tanks.Length; i++)
+        private void OnDestroy()
         {
-            m_Tanks[i].Reset();
-        }
-    }
-
-
-    private void EnableTankControl()
-    {
-        for (int i = 0; i < m_Tanks.Length; i++)
-        {
-            m_Tanks[i].EnableControl();
-        }
-    }
-
-
-    private void DisableTankControl()
-    {
-        for (int i = 0; i < m_Tanks.Length; i++)
-        {
-            m_Tanks[i].DisableControl();
+            // InputProviderをクリーンアップ
+            foreach (var tank in m_Tanks)
+            {
+                if (tank.InputProvider is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
         }
     }
 }

@@ -1,66 +1,102 @@
 ﻿using System;
 using UnityEngine;
+using Complete.Interfaces;
+using Complete.Input;
 
-[Serializable]
-public class TankManager
+namespace Complete
 {
-    public Color m_PlayerColor;            
-    public Transform m_SpawnPoint;         
-    [HideInInspector] public int m_PlayerNumber;             
-    [HideInInspector] public string m_ColoredPlayerText;
-    [HideInInspector] public GameObject m_Instance;          
-    [HideInInspector] public int m_Wins;                     
-
-
-    private TankMovement m_Movement;       
-    private TankShooting m_Shooting;
-    private GameObject m_CanvasGameObject;
-
-
-    public void Setup()
+    /// <summary>
+    /// TankManager - 既存の互換性を保持しつつ、新しい設計に対応
+    /// ITankControllerインターフェースに適合させることで段階的な移行を可能にする
+    /// </summary>
+    public enum TankType
     {
-        m_Movement = m_Instance.GetComponent<TankMovement>();
-        m_Shooting = m_Instance.GetComponent<TankShooting>();
-        m_CanvasGameObject = m_Instance.GetComponentInChildren<Canvas>().gameObject;
+        Player,
+        AI
+    }
 
-        m_Movement.m_PlayerNumber = m_PlayerNumber;
-        m_Shooting.m_PlayerNumber = m_PlayerNumber;
+    [Serializable]
+    public class TankManager : ITankController
+    {
+        [Header("Tank Settings")]
+        public TankType m_TankType = TankType.Player;
+        public Color m_PlayerColor;
+        public Transform m_SpawnPoint;
+        [HideInInspector] public string m_PlayerName;
 
-        m_ColoredPlayerText = "<color=#" + ColorUtility.ToHtmlStringRGB(m_PlayerColor) + ">PLAYER " + m_PlayerNumber + "</color>";
+        [HideInInspector] public string m_ColoredPlayerText;
+        [HideInInspector] public GameObject m_Instance;
+        [HideInInspector] public int m_Wins;
 
-        MeshRenderer[] renderers = m_Instance.GetComponentsInChildren<MeshRenderer>();
+        public IInputProvider InputProvider { get; private set; }
 
-        for (int i = 0; i < renderers.Length; i++)
+        private TankMovement m_Movement;
+        private TankShooting m_Shooting;
+        private GameObject m_CanvasGameObject;
+
+
+        /// <summary>
+        /// タンクをセットアップ
+        /// </summary>
+        /// <param name="tankInstance">タンクのインスタンス</param>
+        /// <param name="inputProvider">入力プロバイダー</param>
+        /// <param name="playerNumber">プレイヤー番号</param>
+        /// <param name="playerName">プレイヤー名</param>
+        public void Setup(GameObject tankInstance, IInputProvider inputProvider, int playerNumber, string playerName)
         {
-            renderers[i].material.color = m_PlayerColor;
+            m_Instance = tankInstance;
+            InputProvider = inputProvider;
+            m_PlayerName = playerName;
+            
+            // コンポーネントを取得
+            m_Movement = m_Instance.GetComponent<TankMovement>();
+            m_Shooting = m_Instance.GetComponent<TankShooting>();
+            m_CanvasGameObject = m_Instance.GetComponentInChildren<Canvas>().gameObject;
+
+            // 各コンポーネントにInputProviderを設定
+            m_Movement.Setup(InputProvider);
+            m_Shooting.Setup(InputProvider);
+
+            // プレイヤーテキストを作成
+            m_ColoredPlayerText = "<color=#" + ColorUtility.ToHtmlStringRGB(m_PlayerColor) + ">" + m_PlayerName + "</color>";
+
+            // マテリアルの色を設定
+            SetTankColor();
         }
-    }
 
+        public void Enable()
+        {
+            m_Movement.enabled = true;
+            m_Shooting.enabled = true;
+            m_CanvasGameObject.SetActive(true);
+        }
 
-    public void DisableControl()
-    {
-        m_Movement.enabled = false;
-        m_Shooting.enabled = false;
+        public void Disable()
+        {
+            m_Movement.enabled = false;
+            m_Shooting.enabled = false;
+            m_CanvasGameObject.SetActive(false);
+        }
 
-        m_CanvasGameObject.SetActive(false);
-    }
+        public void Reset()
+        {
+            m_Instance.transform.position = m_SpawnPoint.position;
+            m_Instance.transform.rotation = m_SpawnPoint.rotation;
+            
+            m_Instance.SetActive(false);
+            m_Instance.SetActive(true);
+        }
 
-
-    public void EnableControl()
-    {
-        m_Movement.enabled = true;
-        m_Shooting.enabled = true;
-
-        m_CanvasGameObject.SetActive(true);
-    }
-
-
-    public void Reset()
-    {
-        m_Instance.transform.position = m_SpawnPoint.position;
-        m_Instance.transform.rotation = m_SpawnPoint.rotation;
-
-        m_Instance.SetActive(false);
-        m_Instance.SetActive(true);
+        /// <summary>
+        /// タンクの色を設定
+        /// </summary>
+        private void SetTankColor()
+        {
+            MeshRenderer[] renderers = m_Instance.GetComponentsInChildren<MeshRenderer>();
+            foreach (var renderer in renderers)
+            {
+                renderer.material.color = m_PlayerColor;
+            }
+        }
     }
 }
