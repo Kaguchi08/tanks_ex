@@ -30,11 +30,21 @@ namespace Complete
 
         private float _movementInputValue;
         private float _turnInputValue;
+        private bool _isPhysicsOverride = false;
+        private float _physicsOverrideEndTime = 0f;
 
         public void Setup(IInputProvider inputProvider)
         {
             _inputProvider = inputProvider;
         }
+
+        public void SetPhysicsOverride(float duration = 2f)
+        {
+            _isPhysicsOverride = true;
+            _physicsOverrideEndTime = Time.time + duration;
+        }
+
+        public bool IsPhysicsOverride => _isPhysicsOverride && Time.time < _physicsOverrideEndTime;
 
         private void Awake()
         {
@@ -80,6 +90,12 @@ namespace Complete
             Observable.EveryFixedUpdate()
                 .Subscribe(_ =>
                 {
+                    // 物理演算オーバーライド状態を更新
+                    if (_isPhysicsOverride && Time.time >= _physicsOverrideEndTime)
+                    {
+                        _isPhysicsOverride = false;
+                    }
+
                     Move(_movementInputValue);
                     Turn(_turnInputValue);
                 })
