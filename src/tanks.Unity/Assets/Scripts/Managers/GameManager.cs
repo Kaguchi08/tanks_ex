@@ -30,7 +30,7 @@ namespace Complete
         public GameObject m_TankPrefab;
         public TankManager[] m_Tanks;     // 既存のTankManagerを使用（ITankControllerインターフェース対応済み）
         public NetworkManager m_NetworkManager;
-        public HUDManager m_HUDManager;
+        public Complete.UI.MVP.MVPHUDManager m_MVPHUDManager;  // MVPベースのHUDManager
 
         
         private ITankController[] _tankControllers;
@@ -474,15 +474,27 @@ namespace Complete
         /// </summary>
         public int GetMyPlayerID()
         {
+            // ネットワークモードではNetworkManagerから取得
+            if (m_UseNetworkMode && m_NetworkManager != null)
+            {
+                int networkPlayerId = m_NetworkManager.MyPlayerId;
+                Debug.Log($"GetMyPlayerID (Network): {networkPlayerId}");
+                return networkPlayerId;
+            }
+            
+            // ローカルモードでは従来通り
             for (int i = 0; i < m_Tanks.Length; i++)
             {
                 if (m_Tanks[i].m_TankType == TankType.Player && 
                     m_Tanks[i].m_Instance != null &&
                     m_Tanks[i].InputProvider is LocalInputProvider)
                 {
+                    Debug.Log($"GetMyPlayerID (Local): {m_Tanks[i].m_PlayerID}");
                     return m_Tanks[i].m_PlayerID;
                 }
             }
+            
+            Debug.LogWarning("GetMyPlayerID: No matching player found, returning -1");
             return -1;
         }
 
@@ -569,38 +581,45 @@ namespace Complete
             if (m_UseNetworkMode && m_NetworkManager != null)
             {
                 int myPlayerID = GetMyPlayerID();
-                return m_Tanks[tankIndex].m_PlayerID == myPlayerID;
+                int tankPlayerID = m_Tanks[tankIndex].m_PlayerID;
+                bool isMyTank = tankPlayerID == myPlayerID;
+                Debug.Log($"IsMyPlayerTank (Network): Tank[{tankIndex}] PlayerID={tankPlayerID}, MyPlayerID={myPlayerID}, IsMyTank={isMyTank}");
+                return isMyTank;
             }
             else
             {
-                return m_Tanks[tankIndex].m_TankType == TankType.Player;
+                bool isPlayerType = m_Tanks[tankIndex].m_TankType == TankType.Player;
+                Debug.Log($"IsMyPlayerTank (Local): Tank[{tankIndex}] TankType={m_Tanks[tankIndex].m_TankType}, IsPlayerType={isPlayerType}");
+                return isPlayerType;
             }
         }
 
         private void SetupPlayerHUD(int tankIndex)
         {
-            if (m_HUDManager == null)
+            Debug.Log($"=== SetupPlayerHUD called for tank {tankIndex} ===");
+            Debug.Log($"MVP HUD Manager: {(m_MVPHUDManager != null ? m_MVPHUDManager.name : "null")}");
+            
+            if (m_MVPHUDManager != null)
             {
-                Debug.LogWarning("HUDManagerが設定されていません");
-                return;
-            }
-
-            TankHealth tankHealth = m_Tanks[tankIndex].GetTankHealth();
-            if (tankHealth != null)
-            {
-                Debug.Log($"=== SetupPlayerHUD: Tank {tankIndex} ===");
-                Debug.Log($"TankHealth found: {tankHealth.GetType().Name}");
-                Debug.Log($"Current Health: {tankHealth.CurrentHealth}");
-                Debug.Log($"Max Health: {tankHealth.MaxHealth}");
-                
-                m_HUDManager.SetPlayerHealthProvider(tankHealth);
-                m_HUDManager.ShowAll();
-                Debug.Log($"HUDManager: プレイヤータンク（Slot:{tankIndex}）のHPを設定しました");
-                
+                TankHealth tankHealth = m_Tanks[tankIndex].GetTankHealth();
+                if (tankHealth != null)
+                {
+                    Debug.Log($"TankHealth found: {tankHealth.GetType().Name}");
+                    Debug.Log($"Current Health: {tankHealth.CurrentHealth}");
+                    Debug.Log($"Max Health: {tankHealth.MaxHealth}");
+                    
+                    m_MVPHUDManager.SetPlayerHealthProvider(tankHealth);
+                    m_MVPHUDManager.ShowAll();
+                    Debug.Log($"MVPHUDManager: プレイヤータンク（Slot:{tankIndex}）のHPを設定しました");
+                }
+                else
+                {
+                    Debug.LogError($"TankHealth component not found on tank {tankIndex}");
+                }
             }
             else
             {
-                Debug.LogError($"TankHealth component not found on tank {tankIndex}");
+                Debug.LogError("MVPHUDManagerが設定されていません");
             }
         }
         

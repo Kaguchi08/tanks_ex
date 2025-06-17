@@ -34,6 +34,7 @@ namespace Complete
 
         public bool IsNetworkMode => _useNetworkMode;
         public bool IsConnected => _client != null;
+        public int MyPlayerId => _myPlayerId;
 
         private void Start()
         {
