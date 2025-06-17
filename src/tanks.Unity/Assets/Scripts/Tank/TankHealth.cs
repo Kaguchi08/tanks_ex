@@ -2,7 +2,7 @@
 using UnityEngine.UI;
 using UniRx;
 using System;
-using Complete.UI.HUD;
+using Complete.Interfaces;
 
 namespace Complete
 {
