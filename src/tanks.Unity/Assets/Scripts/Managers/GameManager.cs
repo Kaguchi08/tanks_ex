@@ -30,6 +30,7 @@ namespace Complete
         public GameObject m_TankPrefab;
         public TankManager[] m_Tanks;     // 既存のTankManagerを使用（ITankControllerインターフェース対応済み）
         public NetworkManager m_NetworkManager;
+        public HUDManager m_HUDManager;
 
         
         private ITankController[] _tankControllers;
@@ -338,6 +339,12 @@ namespace Complete
             m_Tanks[index].Setup(tankInstance, inputProvider, playerID, playerName);
             Debug.Log($"タンクセットアップ完了: {playerName}, InputProvider: {inputProvider.GetType().Name}");
             
+            // プレイヤーのタンクの場合、HUDManagerにHP情報を設定
+            if (m_Tanks[index].m_TankType == TankType.Player && IsMyPlayerTank(index))
+            {
+                SetupPlayerHUD(index);
+            }
+            
             // ネットワークモードの場合は、TankShootingが自動的にネットワーク通知を行う
             // そのためここでは特別な処理は不要
             
@@ -556,6 +563,47 @@ namespace Complete
             await state.EnterAsync(token);
             state.Exit();
         }
+
+        private bool IsMyPlayerTank(int tankIndex)
+        {
+            if (m_UseNetworkMode && m_NetworkManager != null)
+            {
+                int myPlayerID = GetMyPlayerID();
+                return m_Tanks[tankIndex].m_PlayerID == myPlayerID;
+            }
+            else
+            {
+                return m_Tanks[tankIndex].m_TankType == TankType.Player;
+            }
+        }
+
+        private void SetupPlayerHUD(int tankIndex)
+        {
+            if (m_HUDManager == null)
+            {
+                Debug.LogWarning("HUDManagerが設定されていません");
+                return;
+            }
+
+            TankHealth tankHealth = m_Tanks[tankIndex].GetTankHealth();
+            if (tankHealth != null)
+            {
+                Debug.Log($"=== SetupPlayerHUD: Tank {tankIndex} ===");
+                Debug.Log($"TankHealth found: {tankHealth.GetType().Name}");
+                Debug.Log($"Current Health: {tankHealth.CurrentHealth}");
+                Debug.Log($"Max Health: {tankHealth.MaxHealth}");
+                
+                m_HUDManager.SetPlayerHealthProvider(tankHealth);
+                m_HUDManager.ShowAll();
+                Debug.Log($"HUDManager: プレイヤータンク（Slot:{tankIndex}）のHPを設定しました");
+                
+            }
+            else
+            {
+                Debug.LogError($"TankHealth component not found on tank {tankIndex}");
+            }
+        }
+        
 
         private void OnDestroy()
         {

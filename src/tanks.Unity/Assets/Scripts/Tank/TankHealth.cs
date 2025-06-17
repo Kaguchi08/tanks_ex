@@ -1,10 +1,12 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
 using UniRx;
+using System;
+using Complete.UI.HUD;
 
 namespace Complete
 {
-    public class TankHealth : MonoBehaviour
+    public class TankHealth : MonoBehaviour, IHealthProvider
     {
         public float m_StartingHealth = 100f;               // The amount of health each tank starts with.
         public Slider m_Slider;                             // The slider to represent how much health the tank currently has.
@@ -18,9 +20,16 @@ namespace Complete
         private ParticleSystem m_ExplosionParticles;        // The particle system the will play when the tank is destroyed.
         private UniRx.ReactiveProperty<float> _currentHealth; // リアクティブなヘルス値
         private bool m_Dead;                                // Has the tank been reduced beyond zero health yet?
+        private Subject<Unit> _onDeathSubject = new Subject<Unit>();
 
         private NetworkManager _networkManager;
         private TankManager _tankManager;
+
+        // IHealthProvider implementation
+        public float CurrentHealth => _currentHealth?.Value ?? 0f;
+        public float MaxHealth => m_StartingHealth;
+        public IObservable<float> OnHealthChanged => _currentHealth?.AsObservable() ?? Observable.Empty<float>();
+        public IObservable<Unit> OnDeathEvent => _onDeathSubject.AsObservable();
 
 
         private void Awake ()
@@ -59,8 +68,16 @@ namespace Complete
 
         private void OnEnable()
         {
+            Debug.Log($"=== TankHealth.OnEnable called ===");
+            Debug.Log($"Current health before reset: {_currentHealth?.Value}");
+            Debug.Log($"Starting health: {m_StartingHealth}");
+            
             // When the tank is enabled, reset the tank's health and whether or not it's dead.
-            _currentHealth.Value = m_StartingHealth;
+            if (_currentHealth != null)
+            {
+                _currentHealth.Value = m_StartingHealth;
+                Debug.Log($"Health reset to: {_currentHealth.Value}");
+            }
             m_Dead = false;
 
             // ReactivePropertyによってスライダーは自動更新
@@ -75,7 +92,9 @@ namespace Complete
         public void TakeDamage (float amount)
         {
             // Reduce current health by the amount of damage done.
+            float oldHealth = _currentHealth.Value;
             _currentHealth.Value -= amount;
+            Debug.Log($"TankHealth.TakeDamage: {oldHealth} -> {_currentHealth.Value} (damage: {amount})");
 
             // ネットワークモードの場合、自分のタンクのみヘルス情報を同期
             if (_networkManager != null && _networkManager.IsNetworkMode && _tankManager != null)
@@ -100,11 +119,25 @@ namespace Complete
             _currentHealth.Value -= amount;
         }
 
+        public IObservable<float> GetCurrentHealthObservable()
+        {
+            return _currentHealth.AsObservable();
+        }
+
+        public float GetCurrentHealth()
+        {
+            return _currentHealth.Value;
+        }
+
+
 
         private void OnDeath ()
         {
             // Set the flag so that this function is only called once.
             m_Dead = true;
+
+            // Notify death event
+            _onDeathSubject.OnNext(Unit.Default);
 
             // Move the instantiated explosion prefab to the tank's position and turn it on.
             m_ExplosionParticles.transform.position = transform.position;
@@ -118,6 +151,12 @@ namespace Complete
 
             // Turn the tank off.
             gameObject.SetActive (false);
+        }
+
+        private void OnDestroy()
+        {
+            _onDeathSubject?.Dispose();
+            _currentHealth?.Dispose();
         }
     }
 }
