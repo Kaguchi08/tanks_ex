@@ -68,15 +68,15 @@ namespace Complete
 
         private void OnEnable()
         {
-            Debug.Log($"=== TankHealth.OnEnable called ===");
-            Debug.Log($"Current health before reset: {_currentHealth?.Value}");
-            Debug.Log($"Starting health: {m_StartingHealth}");
+            Debug.Log("TankHealth: タンクヘルス有効化");
+            Debug.Log($"TankHealth: リセット前HP: {_currentHealth?.Value}");
+            Debug.Log($"TankHealth: 初期HP: {m_StartingHealth}");
             
             // When the tank is enabled, reset the tank's health and whether or not it's dead.
             if (_currentHealth != null)
             {
                 _currentHealth.Value = m_StartingHealth;
-                Debug.Log($"Health reset to: {_currentHealth.Value}");
+                Debug.Log($"TankHealth: HPリセット: {_currentHealth.Value}");
             }
             m_Dead = false;
 
@@ -94,7 +94,7 @@ namespace Complete
             // Reduce current health by the amount of damage done.
             float oldHealth = _currentHealth.Value;
             _currentHealth.Value -= amount;
-            Debug.Log($"TankHealth.TakeDamage: {oldHealth} -> {_currentHealth.Value} (damage: {amount})");
+            Debug.Log($"TankHealth: TakeDamage: {oldHealth} -> {_currentHealth.Value} (damage: {amount})");
 
             // ネットワークモードの場合、自分のタンクのみヘルス情報を同期
             if (_networkManager != null && _networkManager.IsNetworkMode && _tankManager != null)
