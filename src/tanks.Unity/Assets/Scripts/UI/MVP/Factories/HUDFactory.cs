@@ -1,3 +1,4 @@
+using System;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
@@ -11,28 +12,83 @@ namespace Complete.UI.MVP
     {
         public async UniTask<IHealthHUDPresenter> CreateHealthHUDAsync(HealthHUDView view)
         {
+            
             if (view == null)
             {
-                Debug.LogError("HUDFactory: HealthHUDView is null");
+                Debug.LogError("HUDFactory: HealthHUDViewがnullです");
                 return null;
             }
             
-            // Model作成
-            var model = new HealthHUDModel();
+            try
+            {
+                var model = new HealthHUDModel();
+                var presenter = new HealthHUDPresenter();
+                
+                presenter.SetView(view);
+                presenter.SetHealthModel(model);
+                
+                await presenter.InitializeAsync();
+                
+                Debug.Log("HUDFactory: ヘルスHUD作成完了");
+                
+                return presenter;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"HUDFactory: ヘルスHUD作成失敗: {ex}");
+                return null;
+            }
+        }
+        
+        public async UniTask<IRoundCountPresenter> CreateRoundCountHUDAsync(RoundCountView view)
+        {
+            if (view == null)
+            {
+                Debug.LogError("HUDFactory: RoundCountViewがnullです");
+                return null;
+            }
             
-            // Presenter作成
-            var presenter = new HealthHUDPresenter();
+            var model = new RoundCountModel();
+            var presenter = new RoundCountPresenter();
             
-            // MVP構成要素を接続
             presenter.SetView(view);
-            presenter.SetHealthModel(model);
+            presenter.SetRoundCountModel(model);
             
-            // 初期化
             await presenter.InitializeAsync();
             
-            Debug.Log($"HUDFactory: Health HUD MVP created for {view.name}");
+            Debug.Log("HUDFactory: ラウンドカウントHUD作成完了");
             
             return presenter;
+        }
+        
+        public async UniTask<IGameTimerPresenter> CreateGameTimerHUDAsync(GameTimerView view)
+        {
+            
+            if (view == null)
+            {
+                Debug.LogError("HUDFactory: GameTimerViewがnullです");
+                return null;
+            }
+            
+            try
+            {
+                var model = new GameTimerModel();
+                var presenter = new GameTimerPresenter();
+                
+                presenter.SetView(view);
+                presenter.SetGameTimerModel(model);
+                
+                await presenter.InitializeAsync();
+                
+                Debug.Log("HUDFactory: ゲームタイマーHUD作成完了");
+                
+                return presenter;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"HUDFactory: ゲームタイマーHUD作成失敗: {ex}");
+                return null;
+            }
         }
     }
 }

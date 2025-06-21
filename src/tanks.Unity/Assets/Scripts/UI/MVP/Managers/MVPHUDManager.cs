@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UniRx;
 using Cysharp.Threading.Tasks;
@@ -15,11 +16,15 @@ namespace Complete.UI.MVP
     {
         [SerializeField] private Canvas _hudCanvas;
         [SerializeField] private HealthHUDView _healthHUDView;
+        [SerializeField] private RoundCountView _roundCountHUDView;
+        [SerializeField] private GameTimerView _gameTimerHUDView;
         
         private IHUDFactory _hudFactory;
         private readonly Dictionary<Type, IPresenter> _presenters = new Dictionary<Type, IPresenter>();
         private readonly CompositeDisposable _disposables = new CompositeDisposable();
         private readonly Subject<bool> _onVisibilityChangedSubject = new Subject<bool>();
+        private readonly Queue<System.Action> _pendingActions = new Queue<System.Action>();
+        private TaskCompletionSource<bool> _initializationCompletionSource;
         
         private bool _isVisible = true;
         private bool _isInitialized = false;
@@ -27,9 +32,63 @@ namespace Complete.UI.MVP
         public IObservable<bool> OnVisibilityChanged => _onVisibilityChangedSubject.AsObservable();
         public bool IsInitialized => _isInitialized;
         
+        /// <summary>
+        /// 初期化完了を待機する
+        /// </summary>
+        public async UniTask WaitForInitializationAsync()
+        {
+            if (_isInitialized)
+            {
+                return;
+            }
+            
+            await _initializationCompletionSource.Task;
+        }
+        
+        /// <summary>
+        /// 保留されていたアクションを処理
+        /// </summary>
+        private void ProcessPendingActions()
+        {
+            int actionCount = _pendingActions.Count;
+            if (actionCount > 0)
+            {
+                Debug.Log($"MVPHUDManager: 保留アクション実行: {actionCount}件");
+            }
+            
+            while (_pendingActions.Count > 0)
+            {
+                var action = _pendingActions.Dequeue();
+                try
+                {
+                    action?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"MVPHUDManager: 保留アクション実行エラー: {ex}");
+                }
+            }
+            
+        }
+        
         private void Awake()
         {
+            // Unity Editor対応: シーン変更時にMVPHUDManagerが破棄されないよう保護
+            #if UNITY_EDITOR
+            // 既存のインスタンスがあるかチェック
+            var existingInstance = FindObjectOfType<MVPHUDManager>();
+            if (existingInstance != null && existingInstance != this)
+            {
+                Debug.LogWarning($"MVPHUDManager: 重複インスタンス検出、破棄: {gameObject.name}");
+                Destroy(gameObject);
+                return;
+            }
+            
+            DontDestroyOnLoad(gameObject);
+            #endif
+            
             _hudFactory = new HUDFactory();
+            _initializationCompletionSource = new TaskCompletionSource<bool>();
             InitializeSynchronously();
         }
         
@@ -48,27 +107,24 @@ namespace Complete.UI.MVP
         private void ValidateComponents()
         {
             if (_hudCanvas == null)
-            {
                 _hudCanvas = GetComponentInChildren<Canvas>();
-                Debug.Log($"MVPHUDManager: Canvas auto-detected - {_hudCanvas?.name}");
-            }
             
             if (_healthHUDView == null)
-            {
                 _healthHUDView = GetComponentInChildren<HealthHUDView>();
-                Debug.Log($"MVPHUDManager: HealthHUDView auto-detected - {_healthHUDView?.name}");
-            }
+            
+            if (_roundCountHUDView == null)
+                _roundCountHUDView = GetComponentInChildren<RoundCountView>();
+            
+            if (_gameTimerHUDView == null)
+                _gameTimerHUDView = GetComponentInChildren<GameTimerView>();
         }
         
         public async UniTask InitializeAsync()
         {
             if (_isInitialized)
             {
-                Debug.LogWarning("MVPHUDManager is already initialized");
                 return;
             }
-            
-            Debug.Log("=== MVPHUDManager Initialize Start ===");
             
             try
             {
@@ -79,18 +135,44 @@ namespace Complete.UI.MVP
                 }
                 else
                 {
-                    Debug.LogWarning("MVPHUDManager: HealthHUDView not found");
+                    Debug.LogWarning("MVPHUDManager: HealthHUDViewが見つかりません");
+                }
+                
+                // Round Count HUDの初期化
+                if (_roundCountHUDView != null)
+                {
+                    await InitializeRoundCountHUDAsync();
+                }
+                else
+                {
+                    Debug.LogWarning("MVPHUDManager: RoundCountViewが見つかりません");
+                }
+                
+                // Game Timer HUDの初期化
+                if (_gameTimerHUDView != null)
+                {
+                    await InitializeGameTimerHUDAsync();
+                }
+                else
+                {
+                    Debug.LogWarning("MVPHUDManager: GameTimerViewが見つかりません");
                 }
                 
                 _isInitialized = true;
-                Debug.Log($"MVPHUDManager initialized with {_presenters.Count} presenters");
+                Debug.Log($"MVPHUDManager: HUD初期化完了 - Presenter数: {_presenters.Count}");
+                
+                // 保留されていたアクションを実行
+                ProcessPendingActions();
+                
+                // 初期化完了を通知
+                _initializationCompletionSource.SetResult(true);
             }
             catch (Exception ex)
             {
-                Debug.LogError($"MVPHUDManager initialization failed: {ex}");
+                Debug.LogError($"MVPHUDManager: HUD初期化失敗: {ex}");
+                _initializationCompletionSource.SetException(ex);
             }
             
-            Debug.Log("=== MVPHUDManager Initialize End ===");
         }
         
         private async UniTask InitializeHealthHUDAsync()
@@ -101,16 +183,58 @@ namespace Complete.UI.MVP
                 if (presenter != null)
                 {
                     RegisterPresenter<IHealthHUDPresenter>(presenter);
-                    Debug.Log("MVPHUDManager: Health HUD initialized successfully");
+                    Debug.Log("MVPHUDManager: ヘルスHUD初期化完了");
                 }
                 else
                 {
-                    Debug.LogError("MVPHUDManager: Failed to create Health HUD presenter");
+                    Debug.LogError("MVPHUDManager: ヘルスHUDプレゼンター作成失敗");
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"MVPHUDManager: Health HUD initialization error - {ex}");
+                Debug.LogError($"MVPHUDManager: ヘルスHUD初期化エラー: {ex}");
+            }
+        }
+        
+        private async UniTask InitializeRoundCountHUDAsync()
+        {
+            try
+            {
+                var presenter = await _hudFactory.CreateRoundCountHUDAsync(_roundCountHUDView);
+                if (presenter != null)
+                {
+                    RegisterPresenter<IRoundCountPresenter>(presenter);
+                    Debug.Log("MVPHUDManager: ラウンドカウントHUD初期化完了");
+                }
+                else
+                {
+                    Debug.LogError("MVPHUDManager: ラウンドカウントHUDプレゼンター作成失敗");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"MVPHUDManager: ラウンドカウントHUD初期化エラー: {ex}");
+            }
+        }
+        
+        private async UniTask InitializeGameTimerHUDAsync()
+        {
+            try
+            {
+                var presenter = await _hudFactory.CreateGameTimerHUDAsync(_gameTimerHUDView);
+                if (presenter != null)
+                {
+                    RegisterPresenter<IGameTimerPresenter>(presenter);
+                    Debug.Log("MVPHUDManager: ゲームタイマーHUD初期化完了");
+                }
+                else
+                {
+                    Debug.LogError("MVPHUDManager: ゲームタイマーHUDプレゼンター作成失敗");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"MVPHUDManager: ゲームタイマーHUD初期化エラー: {ex}");
             }
         }
         
@@ -120,11 +244,10 @@ namespace Complete.UI.MVP
             if (!_presenters.ContainsKey(type))
             {
                 _presenters[type] = presenter;
-                Debug.Log($"MVPHUDManager: Presenter registered - {type.Name}");
             }
             else
             {
-                Debug.LogWarning($"MVPHUDManager: Presenter already registered - {type.Name}");
+                Debug.LogWarning($"MVPHUDManager: プレゼンター重複登録: {type.Name}");
             }
         }
         
@@ -136,19 +259,17 @@ namespace Complete.UI.MVP
                 return presenter as T;
             }
             
-            Debug.LogWarning($"MVPHUDManager: Presenter not found - {type.Name}");
+            Debug.LogWarning($"MVPHUDManager: プレゼンターが見つかりません: {type.Name}");
             return null;
         }
         
         public void ShowAll()
         {
-            Debug.Log($"MVPHUDManager: ShowAll called - IsVisible: {_isVisible}, Presenter Count: {_presenters.Count}");
             
             // 強制的にキャンバスを有効化
             if (_hudCanvas != null)
             {
                 _hudCanvas.gameObject.SetActive(true);
-                Debug.Log("MVPHUDManager: HUD Canvas activated");
             }
             
             // 全てのPresenterを強制的に開始
@@ -156,26 +277,20 @@ namespace Complete.UI.MVP
             {
                 if (presenter != null)
                 {
-                    Debug.Log($"MVPHUDManager: Starting presenter - {presenter.GetType().Name}, Current IsActive: {presenter.IsActive}");
                     if (!presenter.IsActive)
                     {
                         presenter.Start();
-                        Debug.Log($"MVPHUDManager: Presenter started - {presenter.GetType().Name}, New IsActive: {presenter.IsActive}");
-                    }
-                    else
-                    {
-                        Debug.Log($"MVPHUDManager: Presenter already active - {presenter.GetType().Name}");
                     }
                 }
                 else
                 {
-                    Debug.LogWarning("MVPHUDManager: Null presenter found in collection");
+                    Debug.LogWarning("MVPHUDManager: nullプレゼンターを検出");
                 }
             }
             
             _isVisible = true;
             _onVisibilityChangedSubject.OnNext(true);
-            Debug.Log("MVPHUDManager: ShowAll completed");
+            Debug.Log("MVPHUDManager: 全HUD表示完了");
         }
         
         public void HideAll()
@@ -195,8 +310,161 @@ namespace Complete.UI.MVP
                 }
                 
                 _onVisibilityChangedSubject.OnNext(false);
-                Debug.Log("MVPHUDManager: All HUD elements hidden");
+                Debug.Log("MVPHUDManager: 全HUD非表示完了");
             }
+        }
+        
+        /// <summary>
+        /// ゲーム状態をラウンド数HUDに同期
+        /// </summary>
+        public void SyncGameStateToRoundCountHUD(GameManager gameManager)
+        {
+            
+            if (gameManager == null)
+            {
+                Debug.LogWarning("MVPHUDManager: GameManagerがnullです");
+                return;
+            }
+            
+            if (!_isInitialized)
+            {
+                Debug.LogWarning("MVPHUDManager: 未初期化のためゲーム状態を同期できません");
+                return;
+            }
+            
+            var roundCountPresenter = GetPresenter<IRoundCountPresenter>();
+            
+            if (roundCountPresenter is RoundCountPresenter concretePresenter)
+            {
+                var model = concretePresenter.GetModel() as RoundCountModel;
+                
+                if (model != null)
+                {
+                    model.SyncFromGameManager(gameManager);
+                    model.SyncWinsFromTankManagers(gameManager.m_Tanks);
+                    Debug.Log("MVPHUDManager: ラウンドカウントHUDのゲーム状態同期完了");
+                }
+                else
+                {
+                    Debug.LogError("MVPHUDManager: RoundCountModelがnullです");
+                }
+            }
+            else
+            {
+                Debug.LogError("MVPHUDManager: RoundCountPresenterが見つからないか型が違います");
+            }
+        }
+        
+        /// <summary>
+        /// ゲームタイマーを開始/停止
+        /// </summary>
+        public void SetGameTimerRunning(bool isRunning)
+        {
+            
+            if (!_isInitialized)
+            {
+                Debug.LogWarning("MVPHUDManager: 未初期化のためタイマー状態を設定できません");
+                return;
+            }
+            
+            var timerPresenter = GetPresenter<IGameTimerPresenter>();
+            
+            if (timerPresenter is GameTimerPresenter concretePresenter)
+            {
+                var model = concretePresenter.GetModel() as GameTimerModel;
+                
+                if (model != null)
+                {
+                    if (isRunning)
+                    {
+                        model.StartTimer();
+                    }
+                    else
+                    {
+                        model.StopTimer();
+                    }
+                    Debug.Log($"MVPHUDManager: ゲームタイマー{(isRunning ? "開始" : "停止")}");
+                }
+                else
+                {
+                    Debug.LogError("MVPHUDManager: GameTimerModelがnullです");
+                }
+            }
+            else
+            {
+                Debug.LogError("MVPHUDManager: GameTimerPresenterが見つからないか型が違います");
+            }
+        }
+        
+        /// <summary>
+        /// 後から接続したクライアント用：進行中のラウンド時間を同期
+        /// </summary>
+        public void SyncRoundTime(int roundNumber, float currentRoundTime)
+        {
+            // ラウンド数を更新
+            var roundCountPresenter = GetPresenter<IRoundCountPresenter>();
+            if (roundCountPresenter is RoundCountPresenter concreteRoundPresenter)
+            {
+                var roundModel = concreteRoundPresenter.GetModel() as RoundCountModel;
+                if (roundModel != null)
+                {
+                    roundModel.UpdateCurrentRound(roundNumber);
+                }
+            }
+            
+            // 進行中のラウンド時間を同期
+            var timerPresenter = GetPresenter<IGameTimerPresenter>();
+            if (timerPresenter is GameTimerPresenter concreteTimerPresenter)
+            {
+                var timerModel = concreteTimerPresenter.GetModel() as GameTimerModel;
+                if (timerModel != null)
+                {
+                    timerModel.SyncRoundTime(currentRoundTime, true);
+                }
+            }
+            
+            Debug.Log($"MVPHUDManager: ラウンド{roundNumber}の時間{currentRoundTime:F1}秒で同期完了");
+        }
+        
+        /// <summary>
+        /// 新しいラウンドを開始
+        /// </summary>
+        public void StartNewRound(int roundNumber)
+        {
+            
+            if (!_isInitialized)
+            {
+                Debug.LogWarning("MVPHUDManager: 未初期化のため新ラウンドを開始できません");
+                return;
+            }
+            
+            // ラウンド数を更新
+            var roundCountPresenter = GetPresenter<IRoundCountPresenter>();
+            
+            if (roundCountPresenter is RoundCountPresenter concreteRoundPresenter)
+            {
+                var roundModel = concreteRoundPresenter.GetModel() as RoundCountModel;
+                
+                if (roundModel != null)
+                {
+                    roundModel.UpdateCurrentRound(roundNumber);
+                }
+            }
+            
+            // ラウンド時間をリセット
+            var timerPresenter = GetPresenter<IGameTimerPresenter>();
+            
+            if (timerPresenter is GameTimerPresenter concreteTimerPresenter)
+            {
+                var timerModel = concreteTimerPresenter.GetModel() as GameTimerModel;
+                
+                if (timerModel != null)
+                {
+                    timerModel.StartNewRound();
+                }
+            }
+            
+            Debug.Log($"MVPHUDManager: 新ラウンド{roundNumber}開始");
         }
         
         /// <summary>
@@ -206,18 +474,31 @@ namespace Complete.UI.MVP
         {
             if (healthProvider == null)
             {
-                Debug.LogWarning("MVPHUDManager: HealthProvider is null");
+                Debug.LogWarning("MVPHUDManager: HealthProviderがnullです");
                 return;
             }
             
-            Debug.Log($"MVPHUDManager: Setting health provider - {healthProvider.GetType().Name}");
-            Debug.Log($"MVPHUDManager: Current Health: {healthProvider.CurrentHealth}, Max Health: {healthProvider.MaxHealth}");
-            Debug.Log($"MVPHUDManager: IsInitialized: {_isInitialized}, Presenter Count: {_presenters.Count}");
+            
+            // 初期化が完了していない場合はアクションをキューに追加
+            if (!_isInitialized)
+            {
+                Debug.Log("MVPHUDManager: 初期化待ちのためヘルスプロバイダー設定を保留");
+                _pendingActions.Enqueue(() => SetPlayerHealthProviderInternal(healthProvider));
+                return;
+            }
+            
+            SetPlayerHealthProviderInternal(healthProvider);
+        }
+        
+        /// <summary>
+        /// プレイヤーのHealth Provider設定の内部実装
+        /// </summary>
+        private void SetPlayerHealthProviderInternal(IHealthProvider healthProvider)
+        {
             
             var healthPresenter = GetPresenter<IHealthHUDPresenter>();
             if (healthPresenter != null)
             {
-                Debug.Log($"MVPHUDManager: Found health presenter - {healthPresenter.GetType().Name}, IsActive: {healthPresenter.IsActive}");
                 
                 // Presenterを通してModelにHealthProviderを設定
                 if (healthPresenter is HealthHUDPresenter concretePresenter)
@@ -227,38 +508,32 @@ namespace Complete.UI.MVP
                     if (existingModel is HealthHUDModel healthModel)
                     {
                         // 既存のModelにHealthProviderを設定
-                        Debug.Log("MVPHUDManager: Updating existing model with health provider");
                         healthModel.SetHealthProvider(healthProvider);
-                        Debug.Log("MVPHUDManager: Updated existing model with health provider");
                     }
                     else
                     {
                         // 新しいModelを作成
-                        Debug.Log("MVPHUDManager: Creating new model with health provider");
                         var model = new HealthHUDModel();
                         model.SetHealthProvider(healthProvider);
                         concretePresenter.SetHealthModel(model);
-                        Debug.Log("MVPHUDManager: Created new model with health provider");
                     }
                     
                     // Presenterを強制的に開始（まだ開始されていない場合）
                     if (!concretePresenter.IsActive)
                     {
-                        Debug.Log("MVPHUDManager: Force starting presenter after setting health provider");
                         concretePresenter.Start();
-                        Debug.Log($"MVPHUDManager: Presenter started, IsActive: {concretePresenter.IsActive}");
                     }
                     
-                    Debug.Log("MVPHUDManager: Player health provider set successfully");
+                    Debug.Log("MVPHUDManager: プレイヤーヘルスプロバイダー設定完了");
                 }
                 else
                 {
-                    Debug.LogError("MVPHUDManager: Health presenter is not the expected concrete type");
+                    Debug.LogError("MVPHUDManager: ヘルスプレゼンターの型が期待されるものと異なります");
                 }
             }
             else
             {
-                Debug.LogError("MVPHUDManager: Health HUD presenter not found");
+                Debug.LogError("MVPHUDManager: ヘルスHUDプレゼンターが見つかりません");
             }
         }
         
@@ -277,8 +552,9 @@ namespace Complete.UI.MVP
             
             _disposables?.Dispose();
             _onVisibilityChangedSubject?.Dispose();
+            _pendingActions.Clear();
             
-            Debug.Log("MVPHUDManager disposed");
+            Debug.Log("MVPHUDManager: HUDリソース解放完了");
         }
         
         /// <summary>
@@ -287,26 +563,38 @@ namespace Complete.UI.MVP
         [ContextMenu("Diagnose MVP HUD System")]
         public void DiagnoseMVPSystem()
         {
-            Debug.Log("=== MVP HUD System Diagnosis ===");
-            Debug.Log($"Is Initialized: {_isInitialized}");
-            Debug.Log($"Is Visible: {_isVisible}");
-            Debug.Log($"Presenter Count: {_presenters.Count}");
-            Debug.Log($"HUD Canvas: {(_hudCanvas != null ? _hudCanvas.name : "null")}");
-            Debug.Log($"Health HUD View: {(_healthHUDView != null ? _healthHUDView.name : "null")}");
+            Debug.Log("MVPHUDManager: === MVP HUDシステム診断 ===");
+            Debug.Log($"MVPHUDManager: 初期化状態: {_isInitialized}");
+            Debug.Log($"MVPHUDManager: 表示状態: {_isVisible}");
+            Debug.Log($"MVPHUDManager: プレゼンター数: {_presenters.Count}");
+            Debug.Log($"MVPHUDManager: HUDキャンバス: {(_hudCanvas != null ? _hudCanvas.name : "null")}");
+            Debug.Log($"MVPHUDManager: ヘルスHUDビュー: {(_healthHUDView != null ? _healthHUDView.name : "null")}");
+            Debug.Log($"MVPHUDManager: ラウンドカウントHUDビュー: {(_roundCountHUDView != null ? _roundCountHUDView.name : "null")}");
+            Debug.Log($"MVPHUDManager: ゲームタイマーHUDビュー: {(_gameTimerHUDView != null ? _gameTimerHUDView.name : "null")}");
             
-            // HealthHUDViewのスライダー確認
+            // 各Viewのテスト
             if (_healthHUDView != null)
             {
                 _healthHUDView.TestSliderUpdate(0.5f);
             }
             
+            if (_roundCountHUDView != null)
+            {
+                _roundCountHUDView.TestUpdateAll();
+            }
+            
+            if (_gameTimerHUDView != null)
+            {
+                _gameTimerHUDView.TestTimerDisplay();
+            }
+            
             // Presenterの状態確認
             foreach (var kvp in _presenters)
             {
-                Debug.Log($"Presenter: {kvp.Key.Name} -> {kvp.Value.GetType().Name}, Active: {kvp.Value.IsActive}");
+                Debug.Log($"MVPHUDManager: プレゼンター: {kvp.Key.Name} -> {kvp.Value.GetType().Name}, アクティブ: {kvp.Value.IsActive}");
             }
             
-            Debug.Log("=== Diagnosis Complete ===");
+            Debug.Log("MVPHUDManager: === 診断完了 ===");
         }
     }
 }
