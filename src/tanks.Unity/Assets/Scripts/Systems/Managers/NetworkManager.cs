@@ -34,6 +34,7 @@ namespace Complete
 
         public bool IsNetworkMode => _useNetworkMode;
         public bool IsConnected => _client != null;
+        public int MyPlayerId => _myPlayerId;
 
         private void Start()
         {
@@ -208,6 +209,12 @@ namespace Complete
             }
 
             Debug.Log($"リモートプレイヤーのタンクを生成完了: PlayerId={playerId}, Name={playerName}");
+            
+            // リモートプレイヤータンク生成後、ゲーム状態を同期
+            if (_gameManager != null)
+            {
+                _gameManager.SyncGameStateForLateJoiner();
+            }
         }
 
         /// <summary>
@@ -306,6 +313,9 @@ namespace Complete
                 {
                     _gameManager.SpawnLocalPlayerTankWithID(normalizedPlayerID);
                     Debug.Log($"PlayerID {normalizedPlayerID}で自分のローカルタンクを生成しました");
+                    
+                    // 自分のタンク生成後、ゲーム状態を同期
+                    _gameManager.SyncGameStateForLateJoiner();
                 }
             }
             else if (normalizedPlayerID != _myPlayerId)

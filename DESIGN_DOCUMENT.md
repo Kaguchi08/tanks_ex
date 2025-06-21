@@ -73,15 +73,98 @@ graph TB
 ゲームの複雑な状態遷移（ラウンド開始→プレイ中→終了）を管理するために、Stateパターンを採用しています。
 `IGameState`インターフェースを実装した各Stateクラス（`RoundStartingState`, `RoundPlayingState`, `RoundEndingState`）が、それぞれの状態における処理ロジックをカプセル化します。これにより、`GameManager`の責務が肥大化することを防ぎ、状態ごとのロジックが明確になります。
 
-### 3.3. リアクティブプログラミング（UniRx）
+### 3.3. MVP（Model-View-Presenter）パターン
+
+UIシステムには完全なMVPアーキテクチャを採用し、UI/UXの関心事を適切に分離しています。
+
+#### HUD要素のMVP実装
+
+##### HealthHUD - プレイヤー体力表示システム
+- **Model (`HealthHUDModel`)**: 
+  - `IHealthProvider`との連携による体力データの監視
+  - クリティカル閾値の管理（デフォルト25%）
+  - リアクティブな体力変更通知（UniRx使用）
+  - 正規化されたHP値の計算とクリティカル状態判定
+  
+- **View (`HealthHUDView`)**: 
+  - UnityのSliderコンポーネントを使用した体力表示
+  - 体力値に応じた色変化（緑→黄→赤のグラデーション）
+  - クリティカル時の点滅アニメーション（0.3秒間隔）
+  - スムーズなアニメーション遷移（0.2秒）
+  
+- **Presenter (`HealthHUDPresenter`)**: 
+  - ModelとViewの仲介とリアクティブバインディング
+  - 体力変更、クリティカル状態、死亡イベントの監視
+  - Unity Editor固有の初期化タイミング問題の解決
+
+##### GameTimer - ラウンド時間表示システム
+- **Model (`GameTimerModel`)**: 
+  - リアルタイム時間計測（`Time.time`ベース）
+  - ラウンド時間と総ゲーム時間の独立管理
+  - 0.1秒間隔での効率的な時間更新通知
+  - ネットワーク同期用のタイム同期機能（`SyncRoundTime`）
+  
+- **View (`GameTimerView`)**: 
+  - MM:SS形式での時間表示フォーマット
+  - ラウンド時間と総時間の個別表示オプション
+  - 動的な表示制御（タイマー停止時の非表示など）
+  
+- **Presenter (`GameTimerPresenter`)**: 
+  - ゲーム状態（開始/停止/新ラウンド）との同期
+  - 時間フォーマットの制御とUI更新
+  - Unity Editor環境での安定動作保証
+
+##### RoundCount - ラウンド進行表示システム
+- **Model (`RoundCountModel`)**: 
+  - 現在ラウンド数と各プレイヤーの勝利数管理
+  - ゲーム終了条件の監視（指定勝利数到達）
+  - ラウンド進行状態の通知とゲーム終了判定
+  
+- **View (`RoundCountView`)**: 
+  - 現在ラウンド数の表示（"Round X" 形式）
+  - プレイヤー別勝利数の表示（"Player 1: X wins" 形式）
+  - 勝利時のハイライト表示
+  
+- **Presenter (`RoundCountPresenter`)**: 
+  - GameManagerとの連携によるラウンド状態同期
+  - 勝利判定とUI表示の制御
+  - 新ラウンド開始時の表示更新
+
+#### MVP インフラストラクチャ
+
+##### HUDFactory - MVP構成要素の生成管理
+- **責務**: MVP三要素（Model/View/Presenter）の生成と依存関係注入
+- **機能**: 
+  - 型安全なコンポーネント生成（ジェネリクス使用）
+  - 自動的な依存関係解決とバインディング
+  - エラーハンドリングと初期化検証
+  - 各HUDシステム専用の生成メソッド提供
+
+##### MVPHUDManager - 統合ライフサイクル管理
+- **責務**: 全MVP HUDシステムの統合管理とライフサイクル制御
+- **重要機能**:
+  - **非同期初期化システム**: `TaskCompletionSource`による確実な初期化待機
+  - **Unity Editor対応**: DontDestroyOnLoadとEditor固有の初期化処理
+  - **ペンディングアクション**: 初期化前操作のキューイングシステム
+  - **重複インスタンス防止**: シングルトンパターンによる一意性保証
+  - **統合表示制御**: 全HUD要素の一括表示/非表示制御
+
+##### インターフェース設計
+- **抽象化レイヤー**: 各MVP要素の契約定義（`IGameTimerModel`, `IHealthHUDView`等）
+- **依存性逆転**: 具象実装への直接依存を排除
+- **テスト可能性**: モックやスタブによる単体テスト支援
+- **拡張性**: 新HUD要素の容易な追加をサポート
+
+### 3.4. リアクティブプログラミング（UniRx）
 
 本プロジェクトでは、UniRxを活用してイベント駆動型のアーキテクチャを実現しています。
 
 - **入力処理**: `IInputProvider`は`IObservable<T>`を返し、入力の変化をリアクティブに通知
-- **UI更新**: 状態変化を`DistinctUntilChanged()`で監視し、不要な更新を削減
+- **UI更新**: MVP ModelからViewへの状態変化を`OnChanged`ストリームで監視し、不要な更新を削減
+- **体力同期**: `IHealthProvider.OnHealthChanged`でリアルタイム体力変化を監視
 - **ゲームイベント**: 射撃、爆発などのイベントをObservableストリームで管理
 
-### 3.4. 非同期処理（UniTask）
+### 3.5. 非同期処理（UniTask）
 
 高性能な非同期処理のためにUniTaskを全面採用しています。
 
@@ -89,7 +172,7 @@ graph TB
 - **アニメーション**: 従来のCoroutineを完全にUniTaskに置き換え
 - **ライフサイクル管理**: `CancellationToken`を用いた適切なリソース管理
 
-### 3.5. コンポーネントベースアーキテクチャ
+### 3.6. コンポーネントベースアーキテクチャ
 
 Unityの基本的な思想であるコンポーネントベースアーキテクチャに従い、戦車(`Tank`)の機能は`TankMovement`, `TankShooting`, `TankHealth`といった個別のコンポーネントに分割されています。これにより、機能の再利用や組み合わせが容易になります。
 
@@ -212,6 +295,7 @@ public class GameResultData {
     *   `CameraControl`に追従対象の戦車を設定する
     *   ローカル/ネットワークモードの切り替え管理
     *   ネットワーク接続時のゲーム初期化タイミング制御
+    *   `MVPHUDManager`を通じたプレイヤーHUDの統合管理
 
 ### 5.2. NetworkManager
 
@@ -316,13 +400,71 @@ MagicOnionの`StreamingHubBase`を継承したリアルタイム通信ハブ
 *   `volatile`キーワードとロックを用いた状態管理
 *   ゲーム開始/リセットの管理
 
-### 5.8. 共通ユーティリティ
+### 5.8. MVP HUDシステム
+
+本プロジェクトのUIシステムは、完全なMVPアーキテクチャで実装されています。
+
+#### MVPHUDManager
+MVP構成の中央管理クラス
+
+*   **責務**:
+    *   MVP構成要素（Model, View, Presenter）のライフサイクル管理
+    *   `HUDFactory`を通じた依存関係の解決
+    *   プレイヤータンクの`IHealthProvider`とMVP Modelの連携
+    *   HUD表示/非表示の統一制御
+    *   ネットワークモードでのプレイヤー識別とHUD設定
+
+#### HealthHUDModel（MVP Model層）
+体力データの管理とビジネスロジック
+
+*   **責務**:
+    *   `IHealthProvider`からの体力データ受信
+    *   正規化された体力値の計算（0.0-1.0）
+    *   クリティカル状態の判定（25%以下）
+    *   死亡状態の管理
+    *   UniRxストリームによる状態変化通知
+
+#### HealthHUDView（MVP View層）
+UI表示とユーザーインタラクション
+
+*   **責務**:
+    *   HP Sliderの値更新とアニメーション
+    *   体力に応じた色変化（緑→黄→赤）
+    *   クリティカル状態の点滅エフェクト
+    *   UI要素の表示/非表示制御
+
+#### HealthHUDPresenter（MVP Presenter層）
+ModelとViewの仲介とプレゼンテーションロジック
+
+*   **責務**:
+    *   ModelからViewへのデータバインディング
+    *   体力変化イベントの監視と画面反映
+    *   ライフサイクル管理（Start/Stop）
+    *   UniRxによるリアクティブな状態同期
+
+#### HUDFactory
+MVP構成要素の生成と依存関係解決
+
+*   **責務**:
+    *   Model-View-Presenterの作成と接続
+    *   依存関係の注入
+    *   初期化処理の統合
+
+### 5.9. 共通ユーティリティ
 
 #### GameUtility
 重複処理を統合した静的ユーティリティクラス
 
 *   `NormalizePlayerIdToIndex()`: PlayerID正規化
 *   `GetTankManagerByPlayerId()`: タンク取得処理の統合
+
+#### IHealthProvider
+体力情報の統一インターフェース（`Complete.Interfaces`）
+
+*   `CurrentHealth`: 現在の体力値
+*   `MaxHealth`: 最大体力値
+*   `OnHealthChanged`: 体力変化のObservable
+*   `OnDeathEvent`: 死亡イベントのObservable
 
 ## 6. クラス図
 
@@ -335,9 +477,11 @@ classDiagram
     class GameManager {
         +ITankController[] m_Tanks
         +NetworkManager m_NetworkManager
+        +MVPHUDManager m_MVPHUDManager
         +bool m_UseNetworkMode
         +InitializeGame()
         +StartGame()
+        +SetupPlayerHUD(int)
     }
 
     class NetworkManager {
@@ -420,7 +564,47 @@ classDiagram
         +GetTankManagerByPlayerId(TankManager[], int) TankManager
     }
 
+    class MVPHUDManager {
+        +SetPlayerHealthProvider(IHealthProvider)
+        +ShowAll()
+        +HideAll()
+        -IHUDFactory _hudFactory
+        -Dictionary~Type,IPresenter~ _presenters
+    }
+
+    class HealthHUDModel {
+        +float CurrentHealth
+        +float MaxHealth  
+        +float NormalizedHealth
+        +bool IsCritical
+        +bool IsDead
+        +SetHealthProvider(IHealthProvider)
+    }
+
+    class HealthHUDView {
+        +UpdateHealthValue(float)
+        +UpdateHealthColor(Color)
+        +SetCriticalState(bool)
+        +SetDeathState()
+    }
+
+    class HealthHUDPresenter {
+        +Start()
+        +Stop()
+        +SetHealthModel(IHealthModel)
+        +SetView(IHealthHUDView)
+    }
+
+    class IHealthProvider {
+        <<Interface>>
+        +float CurrentHealth
+        +float MaxHealth
+        +IObservable~float~ OnHealthChanged
+        +IObservable~Unit~ OnDeathEvent
+    }
+
     GameManager o-- NetworkManager
+    GameManager o-- MVPHUDManager
     GameManager o-- "m_Tanks" TankManager
     TankManager --|> ITankController
     TankManager o-- "1" IInputProvider
@@ -430,6 +614,12 @@ classDiagram
     
     LocalInputProvider --|> IInputProvider
     RemoteInputProvider --|> IInputProvider
+    TankHealth --|> IHealthProvider
+    
+    MVPHUDManager o-- HealthHUDPresenter
+    HealthHUDPresenter o-- HealthHUDModel
+    HealthHUDPresenter o-- HealthHUDView
+    HealthHUDModel ..> IHealthProvider : uses
     
     NetworkManager ..> RemoteInputProvider : creates
     NetworkManager ..> GameUtility : uses
@@ -652,11 +842,17 @@ dotnet build tanks.sln
 2. **物理挙動の最適化**: ガタガタした動きを自然な挙動に改善
 3. **砲弾同期の完全実装**: 発射から爆発まで完全同期
 4. **ゲーム結果同期**: ラウンド勝敗の完全な一貫性
+5. **MVP UIアーキテクチャ**: 完全なModel-View-Presenterパターンによる保守性とテスタビリティの向上
+6. **ネットワーク対戦でのHUD同期**: Player1/Player2の両方で正常なHP表示を実現
 
 ### 11.2. 実装の特徴
 - **所有権ベース同期**: 各クライアントが自分のタンクの権威的制御を持つ
 - **物理演算オーバーライド**: 位置同期と物理演算の適切な協調
 - **メソッド分離**: ネットワーク経由とローカル処理の明確な分離
 - **リアルタイム性**: 100ms間隔での高頻度同期
+- **MVP UIパターン**: Model-View-Presenterによる完全な関心事分離
+- **リアクティブHUD**: UniRxストリームによるリアルタイム体力同期
+- **ファクトリーパターン**: 依存関係の適切な解決と構成要素の生成
+- **インターフェース設計**: `IHealthProvider`による体力システムの抽象化
 
 本プロジェクトは、現代的なC#開発手法とUnityの最新技術を組み合わせ、ネットワーク同期の複雑な問題を完全に解決した、エンタープライズレベルの品質を持つマルチプレイヤーゲームとして完成されています。 
