@@ -95,6 +95,12 @@ namespace Complete
             _isInitialized = true;
             Debug.Log($"ゲーム初期化完了 - アクティブタンク数: {_tankControllers.Length}");
 
+            // MVPHUDManagerを初期化時にセットアップ（非同期で実行）
+            if (m_MVPHUDManager != null)
+            {
+                _ = InitializeHUDWithDelay();
+            }
+
             if (!m_UseNetworkMode)
             {
                 // ローカルモードでは即座にゲーム開始
@@ -174,6 +180,12 @@ namespace Complete
 
             _gameStarted = true;
             Debug.Log("ゲームループを開始します");
+            
+            // タイマーを開始
+            if (m_MVPHUDManager != null)
+            {
+                m_MVPHUDManager.SetGameTimerRunning(true);
+            }
             
             // ゲームループを非同期で開始
             _ = GameLoopAsync(); // fire and forget
@@ -470,6 +482,134 @@ namespace Complete
         }
 
         /// <summary>
+        /// 現在のゲーム状態を取得
+        /// </summary>
+        public (int currentRound, bool gameStarted, bool isInitialized) GetCurrentGameState()
+        {
+            return (_roundNumber, _gameStarted, _isInitialized);
+        }
+        
+        /// <summary>
+        /// 現在のラウンド数を取得
+        /// </summary>
+        public int GetCurrentRound()
+        {
+            return _roundNumber;
+        }
+        
+        /// <summary>
+        /// ゲーム開始済みかどうか
+        /// </summary>
+        public bool IsGameStarted()
+        {
+            return _gameStarted;
+        }
+        
+        /// <summary>
+        /// HUD初期化を少し遅延させて実行
+        /// </summary>
+        private async UniTask InitializeHUDWithDelay()
+        {
+            // フレームを待ってからHUDを初期化
+            await UniTask.DelayFrame(2);
+            
+            if (m_MVPHUDManager != null && m_MVPHUDManager.IsInitialized)
+            {
+                m_MVPHUDManager.SyncGameStateToRoundCountHUD(this);
+                Debug.Log("GameManager: HUD初期化遅延完了");
+            }
+            else
+            {
+                // HUDが初期化されていない場合、さらに待機
+                await UniTask.WaitUntil(() => m_MVPHUDManager != null && m_MVPHUDManager.IsInitialized, 
+                                      cancellationToken: this.GetCancellationTokenOnDestroy());
+                m_MVPHUDManager.SyncGameStateToRoundCountHUD(this);
+                Debug.Log("GameManager: HUD初期化待機後完了");
+            }
+        }
+        
+        /// <summary>
+        /// 後から接続したクライアント用：ゲーム状態を同期
+        /// </summary>
+        public void SyncGameStateForLateJoiner()
+        {
+            if (!_isInitialized || m_MVPHUDManager == null) return;
+            
+            // 非同期で同期を実行
+            _ = SyncGameStateForLateJoinerAsync();
+        }
+        
+        /// <summary>
+        /// 後から接続したクライアント用：ゲーム状態を同期（非同期版）
+        /// </summary>
+        private async UniTask SyncGameStateForLateJoinerAsync()
+        {
+            Debug.Log($"Late joiner用ゲーム状態同期開始: Round={_roundNumber}, GameStarted={_gameStarted}");
+            
+            // HUDが初期化されるまで待機
+            if (m_MVPHUDManager != null && !m_MVPHUDManager.IsInitialized)
+            {
+                Debug.Log("Late joiner: HUD初期化を待機中...");
+                await UniTask.WaitUntil(() => m_MVPHUDManager.IsInitialized, 
+                                      cancellationToken: this.GetCancellationTokenOnDestroy());
+                Debug.Log("Late joiner: HUD初期化完了を確認");
+            }
+            
+            if (m_MVPHUDManager == null) return;
+            
+            // ゲーム状態をHUDに同期
+            m_MVPHUDManager.SyncGameStateToRoundCountHUD(this);
+            
+            // ゲームが開始済みの場合
+            if (_gameStarted && _roundNumber > 0)
+            {
+                // 進行中のラウンドの場合、時間も含めて同期
+                // 注意: ネットワーク対戦では正確な時間同期のためサーバーからの情報が必要
+                // ここでは暫定的に新しいラウンドとして開始
+                m_MVPHUDManager.StartNewRound(_roundNumber);
+                m_MVPHUDManager.SetGameTimerRunning(true);
+                
+                Debug.Log($"Late joiner: ラウンド{_roundNumber}として同期しタイマー開始");
+            }
+            else if (_gameStarted)
+            {
+                // ゲーム開始済みだがラウンド0の場合
+                m_MVPHUDManager.SetGameTimerRunning(true);
+                Debug.Log("Late joiner: ゲーム開始済み、タイマーのみ開始");
+            }
+            
+            Debug.Log("Late joiner用ゲーム状態同期完了");
+        }
+        
+        /// <summary>
+        /// 外部から特定のラウンド時間で同期（サーバーからの正確な情報用）
+        /// </summary>
+        public void SyncGameStateWithTime(int roundNumber, float roundTime, bool isGameStarted)
+        {
+            if (!_isInitialized || m_MVPHUDManager == null) return;
+            
+            Debug.Log($"正確な時間での同期: Round={roundNumber}, Time={roundTime:F1}s, Started={isGameStarted}");
+            
+            _roundNumber = roundNumber;
+            _gameStarted = isGameStarted;
+            
+            // ゲーム状態をHUDに同期
+            m_MVPHUDManager.SyncGameStateToRoundCountHUD(this);
+            
+            if (isGameStarted && roundNumber > 0)
+            {
+                // 正確な時間でラウンドを同期
+                m_MVPHUDManager.SyncRoundTime(roundNumber, roundTime);
+            }
+            else if (isGameStarted)
+            {
+                m_MVPHUDManager.SetGameTimerRunning(true);
+            }
+            
+            Debug.Log("正確な時間での同期完了");
+        }
+        
+        /// <summary>
         /// 自分のPlayerタンクのPlayerIDを取得
         /// </summary>
         public int GetMyPlayerID()
@@ -546,6 +686,12 @@ namespace Complete
             {
                 _roundNumber++;
 
+                // HUDに新しいラウンドを通知
+                if (m_MVPHUDManager != null)
+                {
+                    m_MVPHUDManager.StartNewRound(_roundNumber);
+                }
+
                 // ラウンド開始状態
                 var roundStartingState = new RoundStartingState(m_StartDelay, m_MessageText, m_CameraControl, _tankControllers, _roundNumber);
                 await ExecuteStateAsync(roundStartingState, token);
@@ -558,9 +704,21 @@ namespace Complete
                 var roundEndingState = new RoundEndingState(m_EndDelay, m_MessageText, _tankControllers, m_NumRoundsToWin, _roundNumber);
                 await ExecuteStateAsync(roundEndingState, token);
 
+                // HUDに勝利数を同期
+                if (m_MVPHUDManager != null)
+                {
+                    m_MVPHUDManager.SyncGameStateToRoundCountHUD(this);
+                }
+
                 // ゲーム勝者がいる場合、シーンを再読み込み
                 if (roundEndingState.GameWinner != null)
                 {
+                    // タイマーを停止
+                    if (m_MVPHUDManager != null)
+                    {
+                        m_MVPHUDManager.SetGameTimerRunning(false);
+                    }
+                    
                     SceneManager.LoadScene(0);
                     return;
                 }
@@ -608,9 +766,8 @@ namespace Complete
                     Debug.Log($"Current Health: {tankHealth.CurrentHealth}");
                     Debug.Log($"Max Health: {tankHealth.MaxHealth}");
                     
-                    m_MVPHUDManager.SetPlayerHealthProvider(tankHealth);
-                    m_MVPHUDManager.ShowAll();
-                    Debug.Log($"MVPHUDManager: プレイヤータンク（Slot:{tankIndex}）のHPを設定しました");
+                    // MVPHUDManagerの初期化完了を待ってからHUD設定を実行
+                    _ = SetupPlayerHUDAsync(tankIndex, tankHealth);
                 }
                 else
                 {
@@ -620,6 +777,29 @@ namespace Complete
             else
             {
                 Debug.LogError("MVPHUDManagerが設定されていません");
+            }
+        }
+        
+        private async UniTask SetupPlayerHUDAsync(int tankIndex, TankHealth tankHealth)
+        {
+            try
+            {
+                Debug.Log($"SetupPlayerHUDAsync: Waiting for MVPHUDManager initialization...");
+                
+                // MVPHUDManagerの初期化完了を待機
+                await m_MVPHUDManager.WaitForInitializationAsync();
+                
+                Debug.Log($"SetupPlayerHUDAsync: MVPHUDManager initialized, setting health provider");
+                
+                // HUD設定を実行
+                m_MVPHUDManager.SetPlayerHealthProvider(tankHealth);
+                m_MVPHUDManager.ShowAll();
+                
+                Debug.Log($"MVPHUDManager: プレイヤータンク（Slot:{tankIndex}）のHPを設定しました");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"SetupPlayerHUDAsync failed for tank {tankIndex}: {ex}");
             }
         }
         
