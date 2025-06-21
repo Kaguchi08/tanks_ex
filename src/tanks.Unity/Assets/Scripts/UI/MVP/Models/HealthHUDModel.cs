@@ -47,7 +47,7 @@ namespace Complete.UI.MVP
         /// </summary>
         public void SetHealthProvider(IHealthProvider healthProvider)
         {
-            Debug.Log($"HealthHUDModel: SetHealthProvider called - {healthProvider?.GetType().Name}");
+            Debug.Log($"HealthHUDModel: 体力プロバイダーを設定 - {healthProvider?.GetType().Name}");
             
             UnsubscribeFromCurrentProvider();
             
@@ -55,16 +55,16 @@ namespace Complete.UI.MVP
             
             if (_healthProvider != null)
             {
-                Debug.Log($"HealthHUDModel: Health provider set - Current: {_healthProvider.CurrentHealth}, Max: {_healthProvider.MaxHealth}");
+                Debug.Log($"HealthHUDModel: 体力プロバイダー設定完了 - 現在: {_healthProvider.CurrentHealth}, 最大: {_healthProvider.MaxHealth}");
                 SubscribeToHealthProvider();
                 
                 // 初期状態をすぐに通知
-                Debug.Log("HealthHUDModel: Triggering initial OnChanged notification");
+                Debug.Log("HealthHUDModel: 初期変更通知を送信");
                 _onChangedSubject.OnNext(Unit.Default);
             }
             else
             {
-                Debug.LogWarning("HealthHUDModel: Health provider is null");
+                Debug.LogWarning("HealthHUDModel: 体力プロバイダーがnullです");
             }
         }
         
@@ -78,13 +78,13 @@ namespace Complete.UI.MVP
         {
             if (_healthProvider == null) return;
             
-            Debug.Log("HealthHUDModel: Subscribing to health provider events");
+            Debug.Log("HealthHUDModel: 体力プロバイダーのイベントを購読");
             
             // HP変更時の処理
             _healthProvider.OnHealthChanged
                 .Subscribe(newHealth => 
                 {
-                    Debug.Log($"HealthHUDModel: OnHealthChanged received - New Health: {newHealth}");
+                    Debug.Log($"HealthHUDModel: 体力変更イベント受信 - 新しい体力: {newHealth}");
                     CheckCriticalStateChange();
                     _onChangedSubject.OnNext(Unit.Default);
                 })

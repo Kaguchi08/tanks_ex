@@ -25,7 +25,7 @@ namespace Complete.UI.MVP
                 await _view.InitializeAsync();
             }
             
-            Debug.Log("HealthHUDPresenter initialized");
+            Debug.Log("HealthHUDPresenter: ヘルスHUDプレゼンター初期化完了");
         }
         
         public void SetHealthModel(IHealthModel healthModel)
@@ -46,13 +46,13 @@ namespace Complete.UI.MVP
                 UpdateViewFromModel();
             }
             
-            Debug.Log($"HealthHUDPresenter: Model set - {healthModel?.GetType().Name}");
+            Debug.Log($"HealthHUDPresenter: モデル設定 - {healthModel?.GetType().Name}");
         }
         
         public void SetView(IHealthHUDView view)
         {
             _view = view;
-            Debug.Log($"HealthHUDPresenter: View set - {view?.GetType().Name}");
+            Debug.Log($"HealthHUDPresenter: ビュー設定 - {view?.GetType().Name}");
         }
         
         public IHealthModel GetModel()
@@ -64,7 +64,7 @@ namespace Complete.UI.MVP
         {
             if (_isActive)
             {
-                Debug.LogWarning("HealthHUDPresenter is already active");
+                Debug.LogWarning("HealthHUDPresenter: ヘルスHUDプレゼンターは既にアクティブです");
                 return;
             }
             
@@ -81,14 +81,14 @@ namespace Complete.UI.MVP
                 _view.Show();
             }
             
-            Debug.Log("HealthHUDPresenter started");
+            Debug.Log("HealthHUDPresenter: ヘルスHUDプレゼンター開始");
         }
         
         public void Stop()
         {
             if (!_isActive)
             {
-                Debug.LogWarning("HealthHUDPresenter is already inactive");
+                Debug.LogWarning("HealthHUDPresenter: ヘルスHUDプレゼンターは既に非アクティブです");
                 return;
             }
             
@@ -100,7 +100,7 @@ namespace Complete.UI.MVP
                 _view.Hide();
             }
             
-            Debug.Log("HealthHUDPresenter stopped");
+            Debug.Log("HealthHUDPresenter: ヘルスHUDプレゼンター停止");
         }
         
         private void SubscribeToModel()
@@ -127,13 +127,13 @@ namespace Complete.UI.MVP
                 .Subscribe(_ => UpdateViewFromModel())
                 .AddTo(_disposables);
                 
-            Debug.Log("HealthHUDPresenter: Subscribed to model events");
+            Debug.Log("HealthHUDPresenter: モデルイベント購読開始");
         }
         
         private void UnsubscribeFromModel()
         {
             _disposables.Clear();
-            Debug.Log("HealthHUDPresenter: Unsubscribed from model events");
+            Debug.Log("HealthHUDPresenter: モデルイベント購読終了");
         }
         
         private void UpdateViewFromModel()
@@ -153,27 +153,27 @@ namespace Complete.UI.MVP
         {
             if (_model == null || _view == null) 
             {
-                Debug.LogWarning("HealthHUDPresenter: UpdateHealthDisplay called but model or view is null");
+                Debug.LogWarning("HealthHUDPresenter: モデルまたはビューがnullです");
                 return;
             }
             
             float normalizedHealth = _model.NormalizedHealth;
             
-            Debug.Log($"HealthHUDPresenter: UpdateHealthDisplay called - Current: {_model.CurrentHealth}, Max: {_model.MaxHealth}, Normalized: {normalizedHealth:P0}");
+            Debug.Log($"HealthHUDPresenter: ヘルス更新 - 現在: {_model.CurrentHealth}, 最大: {_model.MaxHealth}, 正規化: {normalizedHealth:P0}");
             
             // HP値を更新
             _view.UpdateHealthValue(normalizedHealth);
-            Debug.Log($"HealthHUDPresenter: Called UpdateHealthValue({normalizedHealth})");
+            Debug.Log($"HealthHUDPresenter: UpdateHealthValue({normalizedHealth})呼出");
             
             // HP色を更新（死亡状態でなければ）
             if (!_model.IsDead)
             {
                 Color healthColor = CalculateHealthColor(normalizedHealth, _model.IsCritical);
                 _view.UpdateHealthColor(healthColor);
-                Debug.Log($"HealthHUDPresenter: Called UpdateHealthColor({healthColor})");
+                Debug.Log($"HealthHUDPresenter: UpdateHealthColor({healthColor})呼出");
             }
             
-            Debug.Log($"HealthHUDPresenter: Health updated - {_model.CurrentHealth}/{_model.MaxHealth} ({normalizedHealth:P0})");
+            Debug.Log($"HealthHUDPresenter: ヘルス更新完了 - {_model.CurrentHealth}/{_model.MaxHealth} ({normalizedHealth:P0})");
         }
         
         private void UpdateCriticalState(bool isCritical)
@@ -181,7 +181,7 @@ namespace Complete.UI.MVP
             if (_view == null) return;
             
             _view.SetCriticalState(isCritical);
-            Debug.Log($"HealthHUDPresenter: Critical state updated - {isCritical}");
+            Debug.Log($"HealthHUDPresenter: クリティカル状態更新 - {isCritical}");
         }
         
         private void UpdateDeathState()
@@ -189,7 +189,7 @@ namespace Complete.UI.MVP
             if (_view == null) return;
             
             _view.SetDeathState();
-            Debug.Log("HealthHUDPresenter: Death state updated");
+            Debug.Log("HealthHUDPresenter: 死亡状態更新");
         }
         
         private Color CalculateHealthColor(float normalizedHealth, bool isCritical)
@@ -216,7 +216,7 @@ namespace Complete.UI.MVP
             _model?.Dispose();
             _view?.Dispose();
             
-            Debug.Log("HealthHUDPresenter disposed");
+            Debug.Log("HealthHUDPresenter: リソース解放完了");
         }
     }
 }

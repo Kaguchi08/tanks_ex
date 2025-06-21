@@ -42,7 +42,7 @@ namespace Complete.UI.MVP
                 _healthSlider = GetComponentInChildren<Slider>();
                 if (_healthSlider == null)
                 {
-                    Debug.LogError("HealthHUDView: Health Slider not found!", this);
+                    Debug.LogError("HealthHUDView: ヘルススライダーが見つかりません!", this);
                     return;
                 }
             }
@@ -54,10 +54,10 @@ namespace Complete.UI.MVP
             
             if (_fillImage == null)
             {
-                Debug.LogWarning("HealthHUDView: Fill Image not found. Color changes will be disabled.", this);
+                Debug.LogWarning("HealthHUDView: フィルイメージが見つかりません。色変更が無効化されます。", this);
             }
             
-            Debug.Log($"HealthHUDView initialized. Slider: {_healthSlider?.name}, Fill: {_fillImage?.name}");
+            Debug.Log($"HealthHUDView: ヘルスHUD初期化完了 - スライダー: {_healthSlider?.name}, フィル: {_fillImage?.name}");
         }
         
         public async UniTask InitializeAsync()
@@ -96,28 +96,28 @@ namespace Complete.UI.MVP
         
         public void UpdateHealthValue(float normalizedHealth)
         {
-            Debug.Log($"HealthHUDView: UpdateHealthValue called with {normalizedHealth}");
+            Debug.Log($"HealthHUDView: ヘルス値更新: {normalizedHealth}");
             
             if (_healthSlider == null) 
             {
-                Debug.LogError("HealthHUDView: _healthSlider is null!");
+                Debug.LogError("HealthHUDView: ヘルススライダーがnullです!");
                 return;
             }
             
             float clampedValue = Mathf.Clamp01(normalizedHealth);
-            Debug.Log($"HealthHUDView: Clamped value: {clampedValue}, Current slider value: {_healthSlider.value}");
+            Debug.Log($"HealthHUDView: クランプ値: {clampedValue}, 現在のスライダー値: {_healthSlider.value}");
             
             // スムーズなアニメーション
             if (_animationDuration > 0)
             {
-                Debug.Log($"HealthHUDView: Using animation (duration: {_animationDuration}s)");
+                Debug.Log($"HealthHUDView: アニメーション使用 (継続時間: {_animationDuration}秒)");
                 _ = AnimateHealthValue(clampedValue);
             }
             else
             {
-                Debug.Log($"HealthHUDView: Setting slider value directly: {clampedValue}");
+                Debug.Log($"HealthHUDView: スライダー値直接設定: {clampedValue}");
                 _healthSlider.value = clampedValue;
-                Debug.Log($"HealthHUDView: Slider value after setting: {_healthSlider.value}");
+                Debug.Log($"HealthHUDView: 設定後スライダー値: {_healthSlider.value}");
             }
         }
         
@@ -141,17 +141,17 @@ namespace Complete.UI.MVP
         
         public void UpdateHealthColor(Color color)
         {
-            Debug.Log($"HealthHUDView: UpdateHealthColor called with {color}");
+            Debug.Log($"HealthHUDView: ヘルス色更新: {color}");
             
             if (_fillImage != null)
             {
-                Debug.Log($"HealthHUDView: Setting fill image color to {color}");
+                Debug.Log($"HealthHUDView: フィルイメージ色設定: {color}");
                 _fillImage.color = color;
-                Debug.Log($"HealthHUDView: Fill image color after setting: {_fillImage.color}");
+                Debug.Log($"HealthHUDView: 設定後フィルイメージ色: {_fillImage.color}");
             }
             else
             {
-                Debug.LogWarning("HealthHUDView: _fillImage is null!");
+                Debug.LogWarning("HealthHUDView: フィルイメージがnullです!");
             }
         }
         
@@ -160,15 +160,15 @@ namespace Complete.UI.MVP
         /// </summary>
         public void TestSliderUpdate(float value)
         {
-            Debug.Log($"HealthHUDView: TestSliderUpdate called with {value}");
+            Debug.Log($"HealthHUDView: ヘルススライダーテスト: {value}");
             if (_healthSlider != null)
             {
                 _healthSlider.value = value;
-                Debug.Log($"HealthHUDView: Test slider value set to {_healthSlider.value}");
+                Debug.Log($"HealthHUDView: テストスライダー値設定: {_healthSlider.value}");
             }
             else
             {
-                Debug.LogError("HealthHUDView: Cannot test - _healthSlider is null!");
+                Debug.LogError("HealthHUDView: テスト不可 - ヘルススライダーがnullです!");
             }
         }
         
