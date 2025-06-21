@@ -77,11 +77,83 @@ graph TB
 
 UIシステムには完全なMVPアーキテクチャを採用し、UI/UXの関心事を適切に分離しています。
 
-- **Model**: データとビジネスロジックを担当（`HealthHUDModel`）
-- **View**: 表示とユーザーインタラクションを担当（`HealthHUDView`）
-- **Presenter**: ModelとViewの仲介とプレゼンテーションロジックを担当（`HealthHUDPresenter`）
-- **Factory**: MVP構成要素の生成と依存関係解決（`HUDFactory`）
-- **Manager**: MVP全体のライフサイクル管理（`MVPHUDManager`）
+#### HUD要素のMVP実装
+
+##### HealthHUD - プレイヤー体力表示システム
+- **Model (`HealthHUDModel`)**: 
+  - `IHealthProvider`との連携による体力データの監視
+  - クリティカル閾値の管理（デフォルト25%）
+  - リアクティブな体力変更通知（UniRx使用）
+  - 正規化されたHP値の計算とクリティカル状態判定
+  
+- **View (`HealthHUDView`)**: 
+  - UnityのSliderコンポーネントを使用した体力表示
+  - 体力値に応じた色変化（緑→黄→赤のグラデーション）
+  - クリティカル時の点滅アニメーション（0.3秒間隔）
+  - スムーズなアニメーション遷移（0.2秒）
+  
+- **Presenter (`HealthHUDPresenter`)**: 
+  - ModelとViewの仲介とリアクティブバインディング
+  - 体力変更、クリティカル状態、死亡イベントの監視
+  - Unity Editor固有の初期化タイミング問題の解決
+
+##### GameTimer - ラウンド時間表示システム
+- **Model (`GameTimerModel`)**: 
+  - リアルタイム時間計測（`Time.time`ベース）
+  - ラウンド時間と総ゲーム時間の独立管理
+  - 0.1秒間隔での効率的な時間更新通知
+  - ネットワーク同期用のタイム同期機能（`SyncRoundTime`）
+  
+- **View (`GameTimerView`)**: 
+  - MM:SS形式での時間表示フォーマット
+  - ラウンド時間と総時間の個別表示オプション
+  - 動的な表示制御（タイマー停止時の非表示など）
+  
+- **Presenter (`GameTimerPresenter`)**: 
+  - ゲーム状態（開始/停止/新ラウンド）との同期
+  - 時間フォーマットの制御とUI更新
+  - Unity Editor環境での安定動作保証
+
+##### RoundCount - ラウンド進行表示システム
+- **Model (`RoundCountModel`)**: 
+  - 現在ラウンド数と各プレイヤーの勝利数管理
+  - ゲーム終了条件の監視（指定勝利数到達）
+  - ラウンド進行状態の通知とゲーム終了判定
+  
+- **View (`RoundCountView`)**: 
+  - 現在ラウンド数の表示（"Round X" 形式）
+  - プレイヤー別勝利数の表示（"Player 1: X wins" 形式）
+  - 勝利時のハイライト表示
+  
+- **Presenter (`RoundCountPresenter`)**: 
+  - GameManagerとの連携によるラウンド状態同期
+  - 勝利判定とUI表示の制御
+  - 新ラウンド開始時の表示更新
+
+#### MVP インフラストラクチャ
+
+##### HUDFactory - MVP構成要素の生成管理
+- **責務**: MVP三要素（Model/View/Presenter）の生成と依存関係注入
+- **機能**: 
+  - 型安全なコンポーネント生成（ジェネリクス使用）
+  - 自動的な依存関係解決とバインディング
+  - エラーハンドリングと初期化検証
+  - 各HUDシステム専用の生成メソッド提供
+
+##### MVPHUDManager - 統合ライフサイクル管理
+- **責務**: 全MVP HUDシステムの統合管理とライフサイクル制御
+- **重要機能**:
+  - **非同期初期化システム**: `TaskCompletionSource`による確実な初期化待機
+  - **Unity Editor対応**: DontDestroyOnLoadとEditor固有の初期化処理
+  - **ペンディングアクション**: 初期化前操作のキューイングシステム
+  - **重複インスタンス防止**: シングルトンパターンによる一意性保証
+  - **統合表示制御**: 全HUD要素の一括表示/非表示制御
+
+##### インターフェース設計
+- **抽象化レイヤー**: 各MVP要素の契約定義（`IGameTimerModel`, `IHealthHUDView`等）
+- **依存性逆転**: 具象実装への直接依存を排除
+- **テスト可能性**: モックやスタブによる単体テスト支援
+- **拡張性**: 新HUD要素の容易な追加をサポート
 
 ### 3.4. リアクティブプログラミング（UniRx）
 

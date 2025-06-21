@@ -52,7 +52,10 @@ dotnet restore tanks.sln
 - **Strategyパターン**: `IInputProvider`を介した入力プロバイダー（`LocalInputProvider`, `AIInputProvider`, `RemoteInputProvider`）
 - **Facadeパターン**: 戦車システムへの統一インターフェースを提供する`TankManager`
 - **Componentパターン**: `TankMovement`, `TankShooting`, `TankHealth`によるUnityのコンポーネントベースアーキテクチャ
-- **MVPパターン**: UIシステムでModel-View-Presenterアーキテクチャを実装（`MVPHUDManager`, `HealthHUDModel`, `HealthHUDView`, `HealthHUDPresenter`）
+- **MVPパターン**: UIシステムで完全なModel-View-Presenterアーキテクチャを実装
+  - HealthHUD（体力表示）、GameTimer（時間表示）、RoundCount（ラウンド進行）の各HUDシステム
+  - `MVPHUDManager`による統合管理とUnity Editor対応の非同期初期化システム
+  - `TaskCompletionSource`を使用した確実な初期化待機メカニズム
 
 ### SOLID原則の実装
 - **SRP**: 各コンポーネントは単一の責任を持つ（移動、射撃、体力）
@@ -80,7 +83,11 @@ dotnet restore tanks.sln
 - `src/tanks.Unity/Assets/Scripts/Managers/GameManager.cs`: メインゲームロジックコントローラー
 - `src/tanks.Unity/Assets/Scripts/Managers/TankManager.cs`: 個別戦車管理
 - `src/tanks.Unity/Assets/Scripts/MagicOnionInitializer.cs`: ネットワーク初期化
-- `src/tanks.Unity/Assets/Scripts/UI/MVP/Managers/MVPHUDManager.cs`: MVPパターンによるHUD管理
+- `src/tanks.Unity/Assets/Scripts/UI/MVP/Managers/MVPHUDManager.cs`: MVPパターンによるHUD統合管理
+- `src/tanks.Unity/Assets/Scripts/UI/MVP/Factories/HUDFactory.cs`: MVP要素の生成とDI管理
+- `src/tanks.Unity/Assets/Scripts/UI/MVP/Models/`: MVP Modelクラス（HealthHUD、GameTimer、RoundCount）
+- `src/tanks.Unity/Assets/Scripts/UI/MVP/Views/`: MVP Viewクラス（UI表示制御）
+- `src/tanks.Unity/Assets/Scripts/UI/MVP/Presenters/`: MVP Presenterクラス（Model-View仲介）
 - `src/tanks.Unity/Assets/Scripts/Interfaces/IHealthProvider.cs`: 体力情報提供インターフェース
 
 ## テストとビルド
