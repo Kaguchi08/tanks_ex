@@ -1,0 +1,381 @@
+@page "/admin/users"
+@using Tanks.Server.Services
+@using Tanks.Shared.Models
+@inject IUserService UserService
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>ユーザー管理 - Tanks Admin</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">ユーザー管理</h1>
+        <button class="btn btn-primary" @onclick="ShowCreateModal">
+            <i class="bi bi-plus-circle me-1"></i>新規ユーザー作成
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">読み込み中...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- フィルター -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <select class="form-select" @onchange="OnStatusFilterChanged">
+                    <option value="">全てのユーザー</option>
+                    <option value="@((int)UserStatus.Active)">通常ユーザー</option>
+                    <option value="@((int)UserStatus.Suspended)">停止ユーザー</option>
+                    <option value="@((int)UserStatus.Banned)">永久停止ユーザー</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <input type="text" class="form-control" placeholder="ハンドルネームで検索" @bind="searchQuery" @oninput="OnSearchQueryChanged" />
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-outline-secondary" @onclick="RefreshUsers">
+                    <i class="bi bi-arrow-clockwise me-1"></i>更新
+                </button>
+            </div>
+        </div>
+
+        @if (hasConnectionError)
+        {
+            <div class="alert alert-warning" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>データベース接続エラー</strong><br />
+                MySQLサーバーに接続できません。以下を確認してください：
+                <ul class="mt-2 mb-0">
+                    <li>MySQLサーバーが起動していること</li>
+                    <li>接続文字列が正しいこと</li>
+                    <li>データベース「tanks」が存在すること</li>
+                </ul>
+            </div>
+        }
+
+        <!-- ユーザー統計 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card border-primary">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-primary">総ユーザー数</h5>
+                        <h3 class="text-primary">@filteredUsers.Count</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-success">アクティブ</h5>
+                        <h3 class="text-success">@filteredUsers.Count(u => u.Status == UserStatus.Active)</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-warning">停止中</h5>
+                        <h3 class="text-warning">@filteredUsers.Count(u => u.Status == UserStatus.Suspended)</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-danger">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-danger">永久停止</h5>
+                        <h3 class="text-danger">@filteredUsers.Count(u => u.Status == UserStatus.Banned)</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ユーザーテーブル -->
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>ハンドルネーム</th>
+                                <th>勝利数</th>
+                                <th>敗北数</th>
+                                <th>勝率</th>
+                                <th>ステータス</th>
+                                <th>作成日</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in filteredUsers)
+                            {
+                                <tr>
+                                    <td>@user.UserId</td>
+                                    <td>
+                                        <strong>@user.HandleName</strong>
+                                        @if (!user.IsValidHandleName())
+                                        {
+                                            <span class="badge bg-warning text-dark ms-1">無効</span>
+                                        }
+                                    </td>
+                                    <td><span class="badge bg-success">@user.WinCount</span></td>
+                                    <td><span class="badge bg-danger">@user.LoseCount</span></td>
+                                    <td>
+                                        @if (user.TotalGames > 0)
+                                        {
+                                            <span class="fw-bold">@(user.WinRate.ToString("P1"))</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @switch (user.Status)
+                                        {
+                                            case UserStatus.Active:
+                                                <span class="badge bg-success">通常</span>
+                                                break;
+                                            case UserStatus.Suspended:
+                                                <span class="badge bg-warning text-dark">停止</span>
+                                                break;
+                                            case UserStatus.Banned:
+                                                <span class="badge bg-danger">永久停止</span>
+                                                break;
+                                        }
+                                    </td>
+                                    <td>@user.CreatedAt.ToString("yyyy/MM/dd HH:mm")</td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowEditModal(user)">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(user)">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    
+                    @if (!filteredUsers.Any())
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-person-x display-1 text-muted"></i>
+                            <p class="text-muted mt-2">ユーザーが見つかりません</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- ユーザー作成/編集モーダル -->
+<div class="modal fade" id="userModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@(isEditMode ? "ユーザー編集" : "新規ユーザー作成")</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form>
+                    <div class="mb-3">
+                        <label class="form-label">ハンドルネーム</label>
+                        <input type="text" class="form-control" @bind="currentUser.HandleName" maxlength="100" />
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">勝利数</label>
+                                <input type="number" class="form-control" @bind="currentUser.WinCount" min="0" />
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">敗北数</label>
+                                <input type="number" class="form-control" @bind="currentUser.LoseCount" min="0" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ステータス</label>
+                        <select class="form-select" @bind="currentUser.Status">
+                            <option value="@UserStatus.Active">通常</option>
+                            <option value="@UserStatus.Suspended">停止</option>
+                            <option value="@UserStatus.Banned">永久停止</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveUser" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    @(isEditMode ? "更新" : "作成")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<User> users = new();
+    private List<User> filteredUsers = new();
+    private User currentUser = new();
+    private bool isLoading = true;
+    private bool isEditMode = false;
+    private bool isSaving = false;
+    private bool hasConnectionError = false;
+    private string searchQuery = string.Empty;
+    private UserStatus? statusFilter = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshUsers();
+    }
+
+    private async Task RefreshUsers()
+    {
+        isLoading = true;
+        hasConnectionError = false;
+        try
+        {
+            users = await UserService.GetAllUsersAsync();
+            ApplyFilters();
+            
+            // データベース接続が利用できない場合を検出
+            if (users.Count == 0)
+            {
+                // 実際にデータベース接続をテスト
+                try
+                {
+                    await UserService.GetUserByIdAsync(1);
+                }
+                catch (Exception)
+                {
+                    hasConnectionError = true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            hasConnectionError = true;
+            await JSRuntime.InvokeVoidAsync("console.error", "Error loading users:", ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        filteredUsers = users.Where(u =>
+            (statusFilter == null || u.Status == statusFilter) &&
+            (string.IsNullOrEmpty(searchQuery) || u.HandleName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+        ).ToList();
+    }
+
+    private void OnStatusFilterChanged(ChangeEventArgs e)
+    {
+        if (string.IsNullOrEmpty(e.Value?.ToString()))
+        {
+            statusFilter = null;
+        }
+        else
+        {
+            statusFilter = (UserStatus)int.Parse(e.Value.ToString()!);
+        }
+        ApplyFilters();
+    }
+
+    private void OnSearchQueryChanged(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? string.Empty;
+        ApplyFilters();
+    }
+
+    private async Task ShowCreateModal()
+    {
+        currentUser = new User();
+        isEditMode = false;
+        await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('userModal')).show()");
+    }
+
+    private async Task ShowEditModal(User user)
+    {
+        currentUser = new User
+        {
+            UserId = user.UserId,
+            HandleName = user.HandleName,
+            WinCount = user.WinCount,
+            LoseCount = user.LoseCount,
+            Status = user.Status
+        };
+        isEditMode = true;
+        await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('userModal')).show()");
+    }
+
+    private async Task SaveUser()
+    {
+        if (!currentUser.IsValidHandleName())
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "ハンドルネームが無効です。");
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            if (isEditMode)
+            {
+                await UserService.UpdateUserAsync(currentUser);
+            }
+            else
+            {
+                await UserService.CreateUserAsync(currentUser);
+            }
+
+            await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('userModal')).hide()");
+            await RefreshUsers();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"エラーが発生しました: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ConfirmDelete(User user)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"ユーザー「{user.HandleName}」を削除しますか？");
+        if (confirmed)
+        {
+            try
+            {
+                await UserService.DeleteUserAsync(user.UserId);
+                await RefreshUsers();
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"削除エラー: {ex.Message}");
+            }
+        }
+    }
+}
