@@ -1,0 +1,258 @@
+@page "/"
+@page "/admin"
+@using Tanks.Server.Services
+@inject IPlayerManagerService PlayerManager
+@inject IGameStateService GameStateService
+@rendermode InteractiveServer
+
+<PageTitle>管理ダッシュボード - Tanks Game</PageTitle>
+
+<div class="dashboard">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-6 mb-3">🎮 Tanks Game 管理ダッシュボード</h1>
+            <p class="text-muted">サーバーの状態とゲーム進行を管理します</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <!-- Server Status Card -->
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card status-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="status-icon text-success mb-2">
+                        <i class="bi bi-server" style="font-size: 2rem;"></i>
+                    </div>
+                    <h6 class="card-title text-muted">サーバー状態</h6>
+                    <h4 class="text-success mb-0">稼働中</h4>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Players Card -->
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card status-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="status-icon text-primary mb-2">
+                        <i class="bi bi-people-fill" style="font-size: 2rem;"></i>
+                    </div>
+                    <h6 class="card-title text-muted">アクティブプレイヤー</h6>
+                    <h4 class="text-primary mb-0">@activePlayerCount</h4>
+                </div>
+            </div>
+        </div>
+
+        <!-- Total Connections Card -->
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card status-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="status-icon text-info mb-2">
+                        <i class="bi bi-wifi" style="font-size: 2rem;"></i>
+                    </div>
+                    <h6 class="card-title text-muted">総接続数</h6>
+                    <h4 class="text-info mb-0">@totalConnectionCount</h4>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game State Card -->
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card status-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="status-icon @(currentGameState == "実行中" ? "text-warning" : "text-secondary") mb-2">
+                        <i class="bi bi-controller" style="font-size: 2rem;"></i>
+                    </div>
+                    <h6 class="card-title text-muted">ゲーム状態</h6>
+                    <h4 class="@(currentGameState == "実行中" ? "text-warning" : "text-secondary") mb-0">@currentGameState</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Information -->
+    <div class="row mb-4">
+        <div class="col-lg-8 mb-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0"><i class="bi bi-info-circle me-2"></i>サーバー情報</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="info-item mb-3">
+                                <label class="text-muted small">サーバー開始時間</label>
+                                <div class="fw-semibold">@serverStartTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
+                            </div>
+                            <div class="info-item mb-3">
+                                <label class="text-muted small">稼働時間</label>
+                                <div class="fw-semibold">@uptime</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="info-item mb-3">
+                                <label class="text-muted small">最終更新</label>
+                                <div class="fw-semibold">@lastUpdate.ToString("HH:mm:ss")</div>
+                            </div>
+                            <div class="info-item mb-3">
+                                <label class="text-muted small">ゲーム準備状態</label>
+                                <div class="fw-semibold">
+                                    @if (PlayerManager.IsGameReady())
+                                    {
+                                        <span class="badge bg-success">準備完了</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-warning">待機中</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0"><i class="bi bi-gear me-2"></i>クイックアクション</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary btn-sm" @onclick="RefreshData">
+                            <i class="bi bi-arrow-clockwise me-1"></i>データ更新
+                        </button>
+                        <button class="btn btn-success btn-sm" @onclick="StartGame" disabled="@(currentGameState == "実行中")">
+                            <i class="bi bi-play-fill me-1"></i>ゲーム開始
+                        </button>
+                        <button class="btn btn-warning btn-sm" @onclick="StopGame" disabled="@(currentGameState != "実行中")">
+                            <i class="bi bi-stop-fill me-1"></i>ゲーム停止
+                        </button>
+                        <button class="btn btn-secondary btn-sm" @onclick="ResetGame">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>リセット
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0"><i class="bi bi-clock-history me-2"></i>最近のアクティビティ</h5>
+                </div>
+                <div class="card-body">
+                    <div class="activity-log">
+                        @foreach (var activity in activityLog)
+                        {
+                            <div class="activity-item d-flex align-items-center mb-2">
+                                <div class="activity-time text-muted small me-3">@activity.Time.ToString("HH:mm:ss")</div>
+                                <div class="activity-text">@activity.Message</div>
+                            </div>
+                        }
+                        @if (!activityLog.Any())
+                        {
+                            <div class="text-muted text-center py-3">
+                                <i class="bi bi-inbox me-2"></i>アクティビティがありません
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime serverStartTime = DateTime.Now;
+    private DateTime lastUpdate = DateTime.Now;
+    private string uptime => (DateTime.Now - serverStartTime).ToString(@"dd\日\ hh\:mm\:ss");
+    private int activePlayerCount;
+    private int totalConnectionCount;
+    private string currentGameState = "Unknown";
+    private List<ActivityLogItem> activityLog = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshData();
+        AddActivity("管理ダッシュボードが開かれました");
+    }
+
+    private async Task RefreshData()
+    {
+        try
+        {
+            activePlayerCount = PlayerManager.GetActivePlayerCount();
+            totalConnectionCount = PlayerManager.GetTotalConnectionCount();
+            currentGameState = GameStateService.GetCurrentState();
+            lastUpdate = DateTime.Now;
+        }
+        catch (Exception ex)
+        {
+            currentGameState = $"Error: {ex.Message}";
+            AddActivity($"データ更新中にエラーが発生: {ex.Message}");
+        }
+        StateHasChanged();
+    }
+
+    private async Task StartGame()
+    {
+        try
+        {
+            GameStateService.StartGame();
+            await RefreshData();
+            AddActivity("ゲームが開始されました");
+        }
+        catch (Exception ex)
+        {
+            AddActivity($"ゲーム開始エラー: {ex.Message}");
+        }
+    }
+
+    private async Task StopGame()
+    {
+        try
+        {
+            GameStateService.StopGame();
+            await RefreshData();
+            AddActivity("ゲームが停止されました");
+        }
+        catch (Exception ex)
+        {
+            AddActivity($"ゲーム停止エラー: {ex.Message}");
+        }
+    }
+
+    private async Task ResetGame()
+    {
+        try
+        {
+            GameStateService.ResetGame();
+            await RefreshData();
+            AddActivity("ゲーム状態がリセットされました");
+        }
+        catch (Exception ex)
+        {
+            AddActivity($"ゲームリセットエラー: {ex.Message}");
+        }
+    }
+
+    private void AddActivity(string message)
+    {
+        activityLog.Insert(0, new ActivityLogItem { Time = DateTime.Now, Message = message });
+        if (activityLog.Count > 10)
+        {
+            activityLog.RemoveAt(activityLog.Count - 1);
+        }
+        StateHasChanged();
+    }
+
+    private class ActivityLogItem
+    {
+        public DateTime Time { get; set; }
+        public string Message { get; set; } = "";
+    }
+}

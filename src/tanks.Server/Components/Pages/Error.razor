@@ -1,0 +1,31 @@
+@page "/Error"
+@using System.Diagnostics
+
+<PageTitle>エラー - Tanks Game</PageTitle>
+
+<h1 class="text-danger">エラーが発生しました</h1>
+<h2 class="text-danger">申し訳ございませんが、リクエストの処理中にエラーが発生しました。</h2>
+
+@if (ShowRequestId)
+{
+    <p>
+        <strong>リクエストID:</strong> <code>@RequestId</code>
+    </p>
+}
+
+<h3>開発情報</h3>
+<p>
+    エラーの詳細情報については、開発者コンソールを確認してください。
+    本番環境では、このページをカスタマイズしてユーザーフレンドリーなエラーメッセージを表示することを推奨します。
+</p>
+
+@code{
+    [CascadingParameter] 
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}
