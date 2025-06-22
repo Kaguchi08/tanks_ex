@@ -19,7 +19,7 @@ namespace Complete
     {
         [Header("Network Settings")]
         [SerializeField] private string _serverAddress = "localhost";
-        [SerializeField] private int _serverPort = 5044;
+        [SerializeField] private int _serverPort = 5001;
         [SerializeField] private bool _useNetworkMode = false;
 
         [Header("Game References")]

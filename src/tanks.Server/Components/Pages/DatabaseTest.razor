@@ -1,0 +1,260 @@
+@page "/admin/database-test"
+@using Tanks.Server.Data
+@using Microsoft.EntityFrameworkCore
+@inject TankGameDbContext DbContext
+@inject ILogger<DatabaseTest> Logger
+@rendermode InteractiveServer
+
+<PageTitle>データベース接続テスト - Tanks Admin</PageTitle>
+
+<div class="container-fluid">
+    <h1 class="h2 mb-4">データベース接続テスト</h1>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">接続テスト結果</h5>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            <span>テスト中...</span>
+                        </div>
+                    }
+                    else
+                    {
+                        @if (connectionResult != null)
+                        {
+                            <div class="alert @(connectionResult.IsSuccess ? "alert-success" : "alert-danger")" role="alert">
+                                <h6 class="alert-heading">
+                                    <i class="bi @(connectionResult.IsSuccess ? "bi-check-circle" : "bi-x-circle") me-2"></i>
+                                    @(connectionResult.IsSuccess ? "接続成功" : "接続失敗")
+                                </h6>
+                                <p class="mb-0">@connectionResult.Message</p>
+                                @if (!string.IsNullOrEmpty(connectionResult.Details))
+                                {
+                                    <hr>
+                                    <small class="text-muted">@connectionResult.Details</small>
+                                }
+                            </div>
+                        }
+
+                        @if (databaseInfo != null)
+                        {
+                            <h6>データベース情報</h6>
+                            <ul class="list-group list-group-flush">
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>データベース名:</span>
+                                    <strong>@databaseInfo.DatabaseName</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>サーバーバージョン:</span>
+                                    <strong>@databaseInfo.ServerVersion</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>接続文字列:</span>
+                                    <small class="text-muted">@databaseInfo.ConnectionString</small>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>テーブル数:</span>
+                                    <strong>@databaseInfo.TableCount</strong>
+                                </li>
+                            </ul>
+                        }
+                    }
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary" @onclick="TestConnection" disabled="@isLoading">
+                        @if (isLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        再テスト
+                    </button>
+                    <button class="btn btn-secondary ms-2" @onclick="CreateDatabase" disabled="@isLoading">
+                        データベース初期化
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">トラブルシューティング</h6>
+                </div>
+                <div class="card-body">
+                    <h6>一般的な問題と解決策:</h6>
+                    <ul class="small">
+                        <li><strong>接続拒否:</strong> MySQLサーバーが起動していない</li>
+                        <li><strong>認証失敗:</strong> ユーザー名/パスワードが間違っている</li>
+                        <li><strong>データベース不存在:</strong> tanksデータベースが作成されていない</li>
+                        <li><strong>ポート問題:</strong> 3306ポートがブロックされている</li>
+                    </ul>
+                    
+                    <hr>
+                    
+                    <h6>MySQLセットアップ:</h6>
+                    <div class="small">
+                        <p><strong>Docker使用:</strong></p>
+                        <code style="font-size: 0.8em;">
+                            docker run --name mysql-tanks -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=tanks -p 3306:3306 -d mysql:8.4
+                        </code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = false;
+    private ConnectionResult? connectionResult;
+    private DatabaseInfo? databaseInfo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await TestConnection();
+    }
+
+    private async Task TestConnection()
+    {
+        isLoading = true;
+        connectionResult = null;
+        databaseInfo = null;
+
+        try
+        {
+            // 基本接続テスト
+            var canConnect = await DbContext.Database.CanConnectAsync();
+            
+            if (canConnect)
+            {
+                connectionResult = new ConnectionResult
+                {
+                    IsSuccess = true,
+                    Message = "データベースに正常に接続できました。"
+                };
+
+                // データベース情報取得
+                try
+                {
+                    var connectionString = DbContext.Database.GetConnectionString();
+                    var tables = await DbContext.Database.SqlQueryRaw<string>(
+                        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE()"
+                    ).ToListAsync();
+
+                    // MySQLバージョン取得を安全な方法で実行
+                    string version = "Unknown";
+                    try
+                    {
+                        using var command = DbContext.Database.GetDbConnection().CreateCommand();
+                        command.CommandText = "SELECT VERSION()";
+                        await DbContext.Database.OpenConnectionAsync();
+                        var result = await command.ExecuteScalarAsync();
+                        version = result?.ToString() ?? "Unknown";
+                    }
+                    catch (Exception versionError)
+                    {
+                        Logger.LogWarning(versionError, "Failed to get MySQL version");
+                        version = "Version check failed";
+                    }
+                    finally
+                    {
+                        await DbContext.Database.CloseConnectionAsync();
+                    }
+
+                    databaseInfo = new DatabaseInfo
+                    {
+                        DatabaseName = "tanks",
+                        ServerVersion = version,
+                        ConnectionString = MaskConnectionString(connectionString ?? ""),
+                        TableCount = tables.Count
+                    };
+
+                    connectionResult.Details = $"発見されたテーブル: {string.Join(", ", tables)}";
+                }
+                catch (Exception ex)
+                {
+                    connectionResult.Details = $"データベース情報取得エラー: {ex.Message}";
+                }
+            }
+            else
+            {
+                connectionResult = new ConnectionResult
+                {
+                    IsSuccess = false,
+                    Message = "データベースに接続できません。",
+                    Details = "接続文字列やMySQLサーバーの状態を確認してください。"
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Database connection test failed");
+            connectionResult = new ConnectionResult
+            {
+                IsSuccess = false,
+                Message = "接続テスト中にエラーが発生しました。",
+                Details = ex.Message
+            };
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task CreateDatabase()
+    {
+        isLoading = true;
+        try
+        {
+            await DbContext.Database.EnsureCreatedAsync();
+            connectionResult = new ConnectionResult
+            {
+                IsSuccess = true,
+                Message = "データベースとテーブルが作成されました。",
+                Details = "EnsureCreatedAsync()でデータベースを初期化しました。"
+            };
+            await TestConnection();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Database creation failed");
+            connectionResult = new ConnectionResult
+            {
+                IsSuccess = false,
+                Message = "データベース作成に失敗しました。",
+                Details = ex.Message
+            };
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string MaskConnectionString(string connectionString)
+    {
+        return connectionString.Replace("root", "***");
+    }
+
+    public class ConnectionResult
+    {
+        public bool IsSuccess { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string Details { get; set; } = string.Empty;
+    }
+
+    public class DatabaseInfo
+    {
+        public string DatabaseName { get; set; } = string.Empty;
+        public string ServerVersion { get; set; } = string.Empty;
+        public string ConnectionString { get; set; } = string.Empty;
+        public int TableCount { get; set; }
+    }
+}

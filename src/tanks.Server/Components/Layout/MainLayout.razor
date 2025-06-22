@@ -1,0 +1,25 @@
+@inherits LayoutComponentBase
+@namespace Tanks.Server.Components.Layout
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <span class="badge bg-success">Server Running</span>
+            <span class="text-muted">Tanks Game Admin</span>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui">
+    予期しないエラーが発生しました。
+    <a href="" class="reload">再読み込み</a>
+    <a class="dismiss">🗙</a>
+</div>

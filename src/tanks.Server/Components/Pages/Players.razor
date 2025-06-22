@@ -1,0 +1,217 @@
+@page "/admin/players"
+@using Tanks.Server.Services
+@inject IPlayerManagerService PlayerManager
+@rendermode InteractiveServer
+
+<PageTitle>プレイヤー管理 - Tanks Game</PageTitle>
+
+<div class="players-management">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-6 mb-3">👥 プレイヤー管理</h1>
+            <p class="text-muted">接続中のプレイヤーとゲーム参加者を管理します</p>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm text-center">
+                <div class="card-body">
+                    <h5 class="text-primary">@players.Count</h5>
+                    <p class="text-muted mb-0">接続中プレイヤー</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm text-center">
+                <div class="card-body">
+                    <h5 class="text-success">@PlayerManager.GetTotalConnectionCount()</h5>
+                    <p class="text-muted mb-0">総接続数</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm text-center">
+                <div class="card-body">
+                    <h5 class="@(PlayerManager.IsGameReady() ? "text-success" : "text-warning")">
+                        @(PlayerManager.IsGameReady() ? "準備完了" : "待機中")
+                    </h5>
+                    <p class="text-muted mb-0">ゲーム状態</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Players Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">接続中プレイヤー一覧</h5>
+                    <button class="btn btn-outline-primary btn-sm" @onclick="RefreshPlayers">
+                        <i class="bi bi-arrow-clockwise"></i> 更新
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    @if (players.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>プレイヤーID</th>
+                                        <th>プレイヤー名</th>
+                                        <th>接続ID</th>
+                                        <th>接続時間</th>
+                                        <th>状態</th>
+                                        <th>アクション</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var player in players)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-primary">#@player.PlayerID</span>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <div class="avatar-circle me-2">
+                                                        @player.PlayerName.Substring(0, 1).ToUpper()
+                                                    </div>
+                                                    <span class="fw-semibold">@player.PlayerName</span>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <code class="small">@player.ConnectionId</code>
+                                            </td>
+                                            <td>
+                                                <span class="text-muted small">@DateTime.Now.ToString("HH:mm:ss")</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-success">オンライン</span>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm">
+                                                    <button class="btn btn-outline-info" @onclick="() => ViewPlayerDetails(player)">
+                                                        <i class="bi bi-eye"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-warning" @onclick="() => KickPlayer(player)">
+                                                        <i class="bi bi-person-x"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-5">
+                            <i class="bi bi-people display-1 text-muted"></i>
+                            <p class="text-muted mt-3">現在接続中のプレイヤーはいません</p>
+                            <button class="btn btn-primary" @onclick="RefreshPlayers">
+                                <i class="bi bi-arrow-clockwise me-1"></i>更新
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Details Modal (placeholder) -->
+    @if (selectedPlayer != null)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">プレイヤー詳細</h5>
+                        <button type="button" class="btn-close" @onclick="ClosePlayerDetails"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>プレイヤーID:</strong> @selectedPlayer.PlayerID<br />
+                                <strong>プレイヤー名:</strong> @selectedPlayer.PlayerName<br />
+                                <strong>接続ID:</strong> @selectedPlayer.ConnectionId
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="ClosePlayerDetails">閉じる</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .avatar-circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(45deg, #007bff, #6610f2);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 14px;
+    }
+</style>
+
+@code {
+    private List<Tanks.Shared.TankGamePlayer> players = new();
+    private Tanks.Shared.TankGamePlayer? selectedPlayer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshPlayers();
+    }
+
+    private async Task RefreshPlayers()
+    {
+        try
+        {
+            var serverPlayers = PlayerManager.GetAllPlayers();
+            players = serverPlayers.ToList();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            // Handle error - could add toast notification here
+            players = new List<Tanks.Shared.TankGamePlayer>();
+        }
+    }
+
+    private void ViewPlayerDetails(Tanks.Shared.TankGamePlayer player)
+    {
+        selectedPlayer = player;
+        StateHasChanged();
+    }
+
+    private void ClosePlayerDetails()
+    {
+        selectedPlayer = null;
+        StateHasChanged();
+    }
+
+    private async Task KickPlayer(Tanks.Shared.TankGamePlayer player)
+    {
+        try
+        {
+            await PlayerManager.RemovePlayerAsync(player.ConnectionId);
+            await RefreshPlayers();
+        }
+        catch (Exception ex)
+        {
+            // Handle error
+        }
+    }
+}

@@ -9,16 +9,18 @@
 ## アーキテクチャ
 
 ### 主要コンポーネント
-- **サーバー (`src/tanks.Server/`)**: MagicOnion 7.0.4を使用したリアルタイムマルチプレイヤー通信のためのASP.NET Coreサーバー
+- **サーバー (`src/tanks.Server/`)**: MagicOnion 7.0.4を使用したリアルタイムマルチプレイヤー通信のためのASP.NET Coreサーバー + Blazor Server管理画面
 - **共有ライブラリ (`src/tanks.Shared/`)**: クライアントとサーバーで共有される共通インターフェースとデータモデル
 - **Unityクライアント (`src/tanks.Unity/`)**: Universal Render Pipeline (URP)を使用した3D戦車対戦ゲーム
 
 ### 主要技術
 - **MagicOnion**: Unity向けのgRPCベースリアルタイム通信フレームワーク
+- **Blazor Server**: .NET 8対応のリアルタイム管理画面フレームワーク
 - **UniTask**: Unity用の非同期/await サポート
 - **UniRx**: Unity用のReactive Extensions
 - **YetAnotherHttpHandler**: Unityネットワーキング用のHTTP/2クライアント
 - **MessagePack**: ネットワーク通信用バイナリシリアル化
+- **Bootstrap 5**: 管理画面用モダンUIフレームワーク
 
 ## 開発コマンド
 
@@ -72,8 +74,11 @@ dotnet restore tanks.sln
 ## 理解すべき重要ファイル
 
 ### サーバー
-- `src/tanks.Server/Program.cs`: サーバーの起動と設定
+- `src/tanks.Server/Program.cs`: サーバーの起動と設定（MagicOnion + Blazor統合）
 - `src/tanks.Server/Services/TankGameHub.cs`: マルチプレイヤーハブの実装
+- `src/tanks.Server/Components/`: Blazor管理画面コンポーネント
+- `src/tanks.Server/Components/Pages/Admin.razor`: 管理ダッシュボード
+- `src/tanks.Server/Components/Pages/Monitor.razor`: リアルタイム監視画面
 
 ### 共有ライブラリ
 - `src/tanks.Shared/ITankGameHub.cs`: ネットワーク通信インターフェース
@@ -101,6 +106,25 @@ dotnet restore tanks.sln
 - リアルタイム通信はgRPCストリーミングで実現
 - サーバーがゲーム状態を管理し、接続されたクライアントに更新を配信
 - 共有ライブラリがクライアントとサーバー間の型安全性を保証
+
+## 管理画面システム
+
+Blazor Serverによる統合管理画面を提供：
+- **HTTP/1.1とHTTP/2併用**: Blazor（localhost:5000）とgRPC（localhost:5001）の分離
+- **リアルタイム監視**: プレイヤー接続状況、サーバー統計の自動更新
+- **ゲーム制御**: リモートでのゲーム開始/停止/リセット機能
+- **システムテスト**: MagicOnion接続確認、JSON変換テスト
+- **プロダクション対応**: エンタープライズレベルの管理機能
+
+### アクセス方法
+```bash
+cd src/tanks.Server
+dotnet run
+```
+- **管理ダッシュボード**: http://localhost:5000/
+- **プレイヤー管理**: http://localhost:5000/admin/players
+- **リアルタイム監視**: http://localhost:5000/admin/monitor
+- **システムテスト**: http://localhost:5000/admin/test
 
 ## カスタムプロンプト
 - 常に日本語で回答して

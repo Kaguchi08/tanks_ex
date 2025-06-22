@@ -1,0 +1,73 @@
+@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>Tanks Game Server</PageTitle>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="text-center py-5">
+                <h1 class="display-4 mb-4">🎮 Tanks Game Server</h1>
+                <p class="lead">マルチプレイヤー戦車対戦ゲームサーバー管理画面</p>
+                
+                <div class="row mt-5">
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i class="bi bi-people-fill display-4 text-primary mb-3"></i>
+                                <h5 class="card-title">プレイヤー管理</h5>
+                                <p class="card-text">接続中のプレイヤーを管理</p>
+                                <a href="/admin/players" class="btn btn-primary">管理画面へ</a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i class="bi bi-person-badge-fill display-4 text-success mb-3"></i>
+                                <h5 class="card-title">ユーザー管理</h5>
+                                <p class="card-text">ユーザーアカウントとデータ管理</p>
+                                <a href="/admin/users" class="btn btn-success">管理画面へ</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i class="bi bi-activity display-4 text-warning mb-3"></i>
+                                <h5 class="card-title">リアルタイム監視</h5>
+                                <p class="card-text">サーバー状態のリアルタイム監視</p>
+                                <a href="/admin/monitor" class="btn btn-warning">監視画面へ</a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i class="bi bi-database display-4 text-info mb-3"></i>
+                                <h5 class="card-title">データベーステスト</h5>
+                                <p class="card-text">データベース接続確認</p>
+                                <a href="/admin/database-test" class="btn btn-info">テスト画面へ</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        transition: transform 0.2s;
+    }
+    
+    .card:hover {
+        transform: translateY(-5px);
+    }
+</style>

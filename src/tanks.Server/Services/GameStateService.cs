@@ -27,5 +27,34 @@ namespace Tanks.Server.Services
             }
             return Task.CompletedTask;
         }
+
+        public string GetCurrentState()
+        {
+            return _gameStarted ? "実行中" : "停止中";
+        }
+
+        public void StartGame()
+        {
+            lock (_lock)
+            {
+                _gameStarted = true;
+            }
+        }
+
+        public void StopGame()
+        {
+            lock (_lock)
+            {
+                _gameStarted = false;
+            }
+        }
+
+        public void ResetGame()
+        {
+            lock (_lock)
+            {
+                _gameStarted = false;
+            }
+        }
     }
 }

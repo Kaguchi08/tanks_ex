@@ -119,4 +119,17 @@ namespace Tanks.Shared
         [Key(3)]
         public string WinnerName { get; set; } = string.Empty;
     }
+
+    [MessagePackObject]
+    public class TankGamePlayer
+    {
+        [Key(0)]
+        public string ConnectionId { get; set; } = string.Empty;
+        
+        [Key(1)]
+        public int PlayerID { get; set; }
+        
+        [Key(2)]
+        public string PlayerName { get; set; } = string.Empty;
+    }
 } 

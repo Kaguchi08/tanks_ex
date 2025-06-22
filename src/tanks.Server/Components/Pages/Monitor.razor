@@ -1,0 +1,281 @@
+@page "/admin/monitor"
+@using Tanks.Server.Services
+@inject IPlayerManagerService PlayerManager
+@inject IGameStateService GameStateService
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>リアルタイム監視 - Tanks Game</PageTitle>
+
+<div class="monitor-page">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-6 mb-3">📈 リアルタイム監視</h1>
+            <p class="text-muted">サーバーとゲームの状態をリアルタイムで監視します</p>
+        </div>
+    </div>
+
+    <!-- Real-time Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h4>@activePlayerCount</h4>
+                    <p class="mb-0">アクティブプレイヤー</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h4>@totalConnectionCount</h4>
+                    <p class="mb-0">総接続数</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card bg-info text-white">
+                <div class="card-body text-center">
+                    <h4>@uptime</h4>
+                    <p class="mb-0">稼働時間</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card @(currentGameState == "実行中" ? "bg-warning" : "bg-secondary") text-white">
+                <div class="card-body text-center">
+                    <h4>@currentGameState</h4>
+                    <p class="mb-0">ゲーム状態</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">監視設定</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" @bind="autoRefresh" @bind:after="ToggleAutoRefresh">
+                        <label class="form-check-label">自動更新 (@(refreshInterval)秒間隔)</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">更新間隔 (秒)</label>
+                        <input type="range" class="form-range" min="1" max="10" @bind="refreshInterval" @bind:after="UpdateRefreshInterval">
+                        <small class="form-text text-muted">現在: @(refreshInterval)秒</small>
+                    </div>
+                    <button class="btn btn-primary" @onclick="ManualRefresh">手動更新</button>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">システム状態</h5>
+                </div>
+                <div class="card-body">
+                    <div class="status-indicator mb-2">
+                        <span class="badge bg-success me-2">●</span>
+                        <span>MagicOnionサーバー: 正常</span>
+                    </div>
+                    <div class="status-indicator mb-2">
+                        <span class="badge bg-success me-2">●</span>
+                        <span>Blazorサーバー: 正常</span>
+                    </div>
+                    <div class="status-indicator mb-2">
+                        <span class="badge @(PlayerManager.IsGameReady() ? "bg-success" : "bg-warning") me-2">●</span>
+                        <span>ゲーム準備: @(PlayerManager.IsGameReady() ? "完了" : "待機中")</span>
+                    </div>
+                    <div class="status-indicator">
+                        <span class="badge bg-info me-2">●</span>
+                        <span>最終更新: @lastUpdate.ToString("HH:mm:ss")</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Activity Feed -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">ライブアクティビティフィード</h5>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFeed">クリア</button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="activity-feed" style="max-height: 400px; overflow-y: auto;">
+                        @foreach (var activity in activityFeed)
+                        {
+                            <div class="activity-item p-3 border-bottom">
+                                <div class="d-flex justify-content-between">
+                                    <span class="activity-message">@activity.Message</span>
+                                    <small class="text-muted">@activity.Timestamp.ToString("HH:mm:ss")</small>
+                                </div>
+                                <div class="activity-type">
+                                    <span class="badge @GetActivityBadgeClass(activity.Type)">@activity.Type</span>
+                                </div>
+                            </div>
+                        }
+                        @if (!activityFeed.Any())
+                        {
+                            <div class="text-center py-4 text-muted">
+                                アクティビティがありません
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool autoRefresh = true;
+    private int refreshInterval = 3;
+    private DateTime startTime = DateTime.Now;
+    private DateTime lastUpdate = DateTime.Now;
+    private string uptime => (DateTime.Now - startTime).ToString(@"hh\:mm\:ss");
+    private int activePlayerCount;
+    private int totalConnectionCount;
+    private string currentGameState = "Unknown";
+    private Timer? refreshTimer;
+    private List<ActivityItem> activityFeed = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshData();
+        AddActivity("監視ページが開始されました", "System");
+        if (autoRefresh)
+        {
+            StartAutoRefresh();
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        try
+        {
+            var previousPlayerCount = activePlayerCount;
+            var previousGameState = currentGameState;
+
+            activePlayerCount = PlayerManager.GetActivePlayerCount();
+            totalConnectionCount = PlayerManager.GetTotalConnectionCount();
+            currentGameState = GameStateService.GetCurrentState();
+            lastUpdate = DateTime.Now;
+
+            // Check for changes and log them
+            if (previousPlayerCount != activePlayerCount)
+            {
+                AddActivity($"プレイヤー数が変更されました: {previousPlayerCount} → {activePlayerCount}", "Player");
+            }
+            if (previousGameState != currentGameState && previousGameState != "Unknown")
+            {
+                AddActivity($"ゲーム状態が変更されました: {previousGameState} → {currentGameState}", "Game");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddActivity($"データ更新エラー: {ex.Message}", "Error");
+        }
+    }
+
+    private void ToggleAutoRefresh()
+    {
+        if (autoRefresh)
+        {
+            StartAutoRefresh();
+            AddActivity("自動更新が開始されました", "System");
+        }
+        else
+        {
+            StopAutoRefresh();
+            AddActivity("自動更新が停止されました", "System");
+        }
+    }
+
+    private void UpdateRefreshInterval()
+    {
+        if (autoRefresh)
+        {
+            StopAutoRefresh();
+            StartAutoRefresh();
+            AddActivity($"更新間隔が{refreshInterval}秒に変更されました", "System");
+        }
+    }
+
+    private void StartAutoRefresh()
+    {
+        refreshTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await RefreshData();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(refreshInterval));
+    }
+
+    private void StopAutoRefresh()
+    {
+        refreshTimer?.Dispose();
+        refreshTimer = null;
+    }
+
+    private async Task ManualRefresh()
+    {
+        await RefreshData();
+        AddActivity("手動更新が実行されました", "System");
+    }
+
+    private void ClearFeed()
+    {
+        activityFeed.Clear();
+        AddActivity("アクティビティフィードがクリアされました", "System");
+    }
+
+    private void AddActivity(string message, string type)
+    {
+        activityFeed.Insert(0, new ActivityItem
+        {
+            Message = message,
+            Type = type,
+            Timestamp = DateTime.Now
+        });
+
+        // Keep only the last 50 activities
+        if (activityFeed.Count > 50)
+        {
+            activityFeed.RemoveRange(50, activityFeed.Count - 50);
+        }
+    }
+
+    private string GetActivityBadgeClass(string type)
+    {
+        return type switch
+        {
+            "System" => "bg-primary",
+            "Player" => "bg-info",
+            "Game" => "bg-success",
+            "Error" => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+
+    private class ActivityItem
+    {
+        public string Message { get; set; } = "";
+        public string Type { get; set; } = "";
+        public DateTime Timestamp { get; set; }
+    }
+}
+}

@@ -1,0 +1,61 @@
+@namespace Tanks.Server.Components.Layout
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">🎮 Tanks Admin</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/admin" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> ダッシュボード
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/admin/players">
+                <span class="bi bi-people-fill-nav-menu" aria-hidden="true"></span> プレイヤー管理
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/admin/users">
+                <span class="bi bi-person-badge-fill" aria-hidden="true"></span> ユーザー管理
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/admin/gamestate">
+                <span class="bi bi-controller" aria-hidden="true"></span> ゲーム状態
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/admin/monitor">
+                <span class="bi bi-activity" aria-hidden="true"></span> リアルタイム監視
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/admin/settings">
+                <span class="bi bi-gear-fill-nav-menu" aria-hidden="true"></span> 設定
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/admin/test">
+                <span class="bi bi-tools" aria-hidden="true"></span> テスト
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/admin/database-test">
+                <span class="bi bi-database" aria-hidden="true"></span> DB接続テスト
+            </NavLink>
+        </div>
+    </nav>
+</div>

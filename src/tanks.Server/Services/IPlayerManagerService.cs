@@ -12,5 +12,7 @@ namespace Tanks.Server.Services
         IReadOnlyList<TankGamePlayer> GetAllPlayers();
         int GetPlayerCount();
         bool IsGameReady();
+        int GetActivePlayerCount();
+        int GetTotalConnectionCount();
     }
 }

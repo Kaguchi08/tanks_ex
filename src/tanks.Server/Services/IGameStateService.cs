@@ -7,5 +7,9 @@ namespace Tanks.Server.Services
         bool IsGameStarted { get; }
         Task StartGameAsync();
         Task ResetGameAsync();
+        string GetCurrentState();
+        void StartGame();
+        void StopGame();
+        void ResetGame();
     }
 }
