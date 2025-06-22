@@ -147,7 +147,25 @@
                         "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE()"
                     ).ToListAsync();
 
-                    var version = await DbContext.Database.SqlQueryRaw<string>("SELECT VERSION()").FirstAsync();
+                    // MySQLバージョン取得を安全な方法で実行
+                    string version = "Unknown";
+                    try
+                    {
+                        using var command = DbContext.Database.GetDbConnection().CreateCommand();
+                        command.CommandText = "SELECT VERSION()";
+                        await DbContext.Database.OpenConnectionAsync();
+                        var result = await command.ExecuteScalarAsync();
+                        version = result?.ToString() ?? "Unknown";
+                    }
+                    catch (Exception versionError)
+                    {
+                        Logger.LogWarning(versionError, "Failed to get MySQL version");
+                        version = "Version check failed";
+                    }
+                    finally
+                    {
+                        await DbContext.Database.CloseConnectionAsync();
+                    }
 
                     databaseInfo = new DatabaseInfo
                     {
