@@ -9,10 +9,13 @@ namespace Tanks.Server.Services
     public class PlayerManagerService : IPlayerManagerService
     {
         private readonly ConcurrentDictionary<string, TankGamePlayer> _players = new();
+        private int _totalConnectionCount = 0;
         private const int MaxPlayers = 2;
 
         public Task<bool> TryAddPlayerAsync(string connectionId, string playerName)
         {
+            _totalConnectionCount++;
+            
             if (_players.Count >= MaxPlayers)
             {
                 return Task.FromResult(false);
@@ -53,6 +56,16 @@ namespace Tanks.Server.Services
         public bool IsGameReady()
         {
             return _players.Count >= MaxPlayers;
+        }
+
+        public int GetActivePlayerCount()
+        {
+            return _players.Count;
+        }
+
+        public int GetTotalConnectionCount()
+        {
+            return _totalConnectionCount;
         }
     }
 }
