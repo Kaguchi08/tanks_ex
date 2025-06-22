@@ -180,15 +180,7 @@
         try
         {
             var serverPlayers = PlayerManager.GetAllPlayers();
-            players = serverPlayers.Select(p => new Tanks.Shared.TankGamePlayer
-            {
-                ConnectionId = p.ConnectionId,
-                PlayerID = p.PlayerID,
-                PlayerName = p.PlayerName,
-                Health = 100.0f,
-                IsActive = true,
-                JoinTime = DateTime.Now
-            }).ToList();
+            players = serverPlayers.ToList();
             StateHasChanged();
         }
         catch (Exception ex)

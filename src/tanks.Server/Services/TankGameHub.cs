@@ -159,11 +159,4 @@ namespace Tanks.Server.Services
             }
         }
     }
-
-    public class TankGamePlayer
-    {
-        public string ConnectionId { get; set; } = string.Empty;
-        public int PlayerID { get; set; }
-        public string PlayerName { get; set; } = string.Empty;
-    }
 } 
