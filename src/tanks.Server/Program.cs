@@ -1,10 +1,20 @@
 using Tanks.Server.Services;
 using Tanks.Server.Components;
+using Tanks.Server.Data;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddMagicOnion();
+
+// Add Entity Framework
+builder.Services.AddDbContext<TankGameDbContext>(options =>
+    options.UseMySql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        new MySqlServerVersion(new Version(8, 4, 5))
+    )
+);
 
 // Add Blazor services
 builder.Services.AddRazorComponents()
@@ -13,6 +23,7 @@ builder.Services.AddRazorComponents()
 // Register custom services
 builder.Services.AddSingleton<IPlayerManagerService, PlayerManagerService>();
 builder.Services.AddSingleton<IGameStateService, GameStateService>();
+builder.Services.AddScoped<IUserService, UserService>();
 
 // Add logging
 builder.Logging.ClearProviders();
